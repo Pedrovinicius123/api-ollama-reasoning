@@ -43,11 +43,11 @@ def load(log_dir:str):
             raw = f.read()
             upload_file(temp_log_dir=log_dir, filename=file, raw_file=raw)
 
-    return redirect(url_for('index'))
+    return redirect(url_for('home'))
 
 
 @app.route("/submit_question", methods=["GET", "POST"])
-def submit_question():
+async def submit_question():
     form = SubmitQueryForm()
     if form.validate_on_submit():
         # Form validation and processing
@@ -60,12 +60,12 @@ def submit_question():
         max_depth = form.max_depth.data
 
         # Generates and stores the raw data on database
-        generate(log_dir_temp, query, context, n_tokens=n_tokens, model_name=model_name, max_depth=max_depth)
+        await generate(log_dir_temp, query, context, n_tokens=n_tokens, model_name=model_name, max_depth=max_depth)
 
         return redirect(url_for('load', log_dir=log_dir_temp))
     return render_template('form.html', form=form)
 
-def generate(log_dir:str, query:str, context:str, n_tokens:int, model_name:str, max_depth:int):
+async def generate(log_dir:str, query:str, context:str, n_tokens:int, model_name:str, max_depth:int):
     thinker = Reasoning(
         max_width=5,
         max_depth=max_depth,
