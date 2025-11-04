@@ -1,4 +1,5 @@
 from api.model.api_main import make_request_ollama_reasoning
+from api.model.upload_file import upload_file
 import os
 
 generate_prompt = lambda width: f"""
@@ -7,6 +8,7 @@ generate_prompt = lambda width: f"""
 3. DO NOT USE CONJECTURES. Only use well known theorems, lemmas and mathematical concepts. 
 
 Do not write an answer yet, only propose the alternatives.
+ALWAYS write math between \(\)s or \[\]s
 """
 
 continue_prompt = lambda width: f"""
@@ -14,6 +16,7 @@ Now, extensively create an mathematical aproximation using this alternative,
 proposing {width} new ones from the result of the approach.
 
 Also, don't use any conjecture, only theorems, lemmas and other mathematical concepts well known.
+return SOLVED at the and of the reponse, if there is found a solution
 """
 
 class Reasoning:
@@ -38,20 +41,19 @@ class Reasoning:
         context += "\n\n" + prompt
 
         if "SOLVED" in result:
-            log_path = os.path.join('/tmp', log_dir, 'steps', 'output.md')
-            os.makedirs(os.path.join('/tmp', log_dir, 'steps')) if not os.path.exists(log_path) else None
+            with open(os.path.join('/tmp', 'output.md'), 'wb') as file:
+                file.write(result.encode('utf-8'))
 
-            with open(log_path, 'a', encoding='utf-8') as output_file:
-                for s in seq:
-                    output_file.write(s+'\n\n')
+            with open(os.path.join("/tmp", 'output.md'), 'rb') as file:
+                upload_file(log_dir, 'output.md', file)
 
-            return seq
-
-        log_path_steps = os.path.join('/tmp', log_dir, "steps")
-        os.makedirs(log_path_steps) if not os.path.exists(log_path_steps) else None
-
-        with open(os.path.join(log_path_steps, 'log'+str(depth+1)+'.md'), 'w', encoding='utf-8') as file:
-            file.write(result)
+        
+        with open(os.path.join("/tmp", f'log{depth}.md'), 'wb') as file:
+            file.write(result.encode('utf-8'))
+        
+        with open(os.path.join("/tmp", f'log{depth}.md'), 'rb') as file:
+            upload_file(log_dir, f'log{depth}.md', file)
 
         return self.reasoning_step(query=query, context=context+"\n\n"+result, seq=seq+[result], init=False, depth=depth+1, log_dir=log_dir)
+        
         

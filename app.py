@@ -5,6 +5,7 @@ from markdown import markdown
 from database import db, upload_file, Upload
 from api.model.reasoning import Reasoning
 from dotenv import load_dotenv
+import threading
 import os
 
 load_dotenv()
@@ -13,6 +14,8 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
 app.config['MONGODB_HOST'] = os.getenv("MONGODB_URI")
 
+# Simple set of threads
+threads = []
 db.init_app(app)
 
 def read_markdown_to_html(log_dir:str):
@@ -26,6 +29,17 @@ def read_markdown_to_html(log_dir:str):
 
 @app.route("/")
 def home():
+    # Simple thread handling
+    print(threads)
+    for thread in threads:
+        if not thread.is_alive():
+            try:
+                thread.start()
+
+            except:
+                thread.join()
+                threads.remove(thread)
+
     return render_template('index.html')
 
 @app.route("/<log_dir>")
@@ -43,7 +57,7 @@ def load(log_dir:str):
             raw = f.read()
             upload_file(temp_log_dir=log_dir, filename=file, raw_file=raw)
 
-    return redirect(url_for('index'))
+    return redirect(url_for('home'))
 
 
 @app.route("/submit_question", methods=["GET", "POST"])
@@ -60,9 +74,9 @@ def submit_question():
         max_depth = form.max_depth.data
 
         # Generates and stores the raw data on database
-        generate(log_dir_temp, query, context, n_tokens=n_tokens, model_name=model_name, max_depth=max_depth)
-
-        return redirect(url_for('load', log_dir=log_dir_temp))
+        threads.append(threading.Thread(target=generate, args=(log_dir_temp, query, context, n_tokens, model_name, max_depth)))
+        return redirect(url_for('home'))
+    
     return render_template('form.html', form=form)
 
 def generate(log_dir:str, query:str, context:str, n_tokens:int, model_name:str, max_depth:int):
