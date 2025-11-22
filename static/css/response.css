@@ -9,6 +9,17 @@
     color: #111827;
 }
 
+.article-content {
+    max-width: 900px;
+    margin: 24px auto;
+    padding: 20px;
+    background: #f9fafb;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    color: #111827;
+}
+
 .response-content h1,
 .response-content h2,
 .response-content h3 {
@@ -21,6 +32,43 @@
     margin: 0.5rem 0 1rem;
     color: #374151;
 }
+
+.article-content h1,
+.article-content h2,
+.article-content h3 {
+    color: #0f172a;
+    margin: 1rem 0 0.5rem;
+    line-height: 1.2;
+}
+
+.article-content p {
+    margin: 0.5rem 0 1rem;
+    color: #374151;
+}
+
+.article-content code {
+    background: #f3f4f6;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+    font-size: 0.95em;
+}
+
+.article-content pre {
+    background: #0b1220;
+    color: #e6edf3;
+    padding: 12px;
+    border-radius: 6px;
+    overflow: auto;
+}
+
+.article-content ul,
+.article-content ol {
+    margin-left: 1.2rem;
+    margin-bottom: 1rem;
+}
+
+
 
 .response-content ul,
 .response-content ol {
@@ -44,9 +92,17 @@
     overflow: auto;
 }
 
-/* KaTeX math blocks */
-.response-content .katex-display {
-    margin: 0.75rem 0;
+.left {
+    float: left;
+    width: 48%;
+    margin-right: 2%;
+}
+
+.right {
+    float: right;
+    width: 48%;
+    margin-left: 2%;
+    border-left: 2% solid #e5e7eb;
 }
 
 /* Small screens */

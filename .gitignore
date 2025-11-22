@@ -1,6 +1,10 @@
 .venv
+.idea
+.vscode
+__pycache__
 api/model/.env
 .env
 env
+api/model/__pycache__
 **/*/__pycache__
 scripts

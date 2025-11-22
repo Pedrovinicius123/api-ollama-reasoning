@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, url_for, session, stream_with_context, request, Response
+from flask import Blueprint, redirect, url_for, stream_with_context, Response, flash
 from api.model.reasoning import Reasoning
 from database.db import Upload
 import os
@@ -7,11 +7,11 @@ import time
 bp_processing_api = Blueprint("bp_processing_api", __name__)
 thinker = Reasoning("", 0, 0)
 
-@bp_processing_api.route('/process?query=<query>&log_dir=<log_dir>&model=<model>&max_width=<int:max_width>&max_depth=<int:max_depth>&n_tokens=<int:n_tokens>&prompt=<prompt>&api_key=<api_key>')
-def process(query, log_dir, model, max_width, max_depth, n_tokens, prompt, api_key):
+@bp_processing_api.route('/process?query=<query>&log_dir=<log_dir>&model=<model>&max_width=<int:max_width>&max_depth=<int:max_depth>&n_tokens=<int:n_tokens>&api_key=<api_key>')
+def process(query, log_dir, model, max_width, max_depth, n_tokens, api_key):
     obj_context = Upload.objects(filename__contains=os.path.join(log_dir, 'context.md')).first()
-
     if not query:
+        flash("No query provided", "error")
         return redirect(url_for('home'))
 
     # set model and numeric parameters
@@ -28,19 +28,34 @@ def process(query, log_dir, model, max_width, max_depth, n_tokens, prompt, api_k
     thinker.n_tokens_default = int(n_tokens) if n_tokens is not None else thinker.n_tokens_default
     print(thinker.max_depth, obj_context.depth)
     time.sleep(1)
-    if prompt == 'None':
-        obj_context.file.delete()
-        obj_context.depth == 0
 
     result = thinker.reasoning_step(
+        username=obj_context.creator.username,
+        log_dir=log_dir,
         query=query,
         init=obj_context.depth == 0,
-        prompt=None if prompt == 'None' else prompt
     )
 
-    obj_context.file.delete()
-    obj_context.file.put(thinker.context.encode('utf-8'), content_type="text/markdown")
-    obj_context.depth += 1
-    obj_context.save()
+    return Response(stream_with_context(result), content_type='text/plain'), 200
+
+@bp_processing_api.route('/create_article?username=<username>&log_dir=<log_dir>&model=<model>&iteration=<int:iteration>&api_key=<api_key>', methods=['GET'])
+def create_article(username, log_dir, model, iteration, api_key):
+    obj_response = Upload.objects(filename__contains=os.path.join(log_dir, 'response.md')).first()
+    obj_context = Upload.objects(filename__contains=os.path.join(log_dir, 'context.md')).first()
+
+    if obj_response is None or obj_context is None:
+        return redirect(url_for('home'))
+
+    # set model and numeric parameters
+    if model:
+        thinker.model = model
+    
+    thinker.api_key = api_key
+    result = thinker.generate_article_step(
+        username=username,
+        log_dir=log_dir,
+        iteration=iteration,
+        content=obj_response.file.read().decode('utf-8')
+    )
 
     return Response(stream_with_context(result), content_type='text/plain'), 200

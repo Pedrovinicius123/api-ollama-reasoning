@@ -18,6 +18,16 @@ body {
 
 }
 
+.flash{
+    background-color: #fde68a;
+    color: #92400e;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    width: 300px;
+    text-align: center;
+}
+
 form {
     display: flex;
     flex-direction: column;

@@ -42,6 +42,8 @@ def upload_file(user:User, log_dir:str, filename:str, raw_file, depth:int):
         new_upload_doc.file.put(raw_file, content_type="text/markdown")
         new_upload_doc.save()
 
+        return new_upload_doc
+
     else:
         print("Updating existing file...")
         content = existing.file.read()
@@ -49,3 +51,5 @@ def upload_file(user:User, log_dir:str, filename:str, raw_file, depth:int):
         existing.depth = depth
         existing.file.put(content + raw_file, content_type="text/markdown")
         existing.save()
+
+        return existing

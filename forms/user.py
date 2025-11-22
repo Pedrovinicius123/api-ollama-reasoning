@@ -14,6 +14,12 @@ class SubmitQueryForm(FlaskForm):
     model_name = StringField("Model name", validators=[Optional()])
     submit = SubmitField('submit')
 
+class SubmitArticleForm(FlaskForm):
+    api_key = StringField("Your Ollama API key", validators=[DataRequired()])
+    n_iterations = IntegerField("Number of tokens (max)", validators=[Optional()])
+    model_name = StringField("Model name", validators=[Optional()])
+    submit = SubmitField('Create Article')
+
 class CreateUser(FlaskForm):
     username = StringField("Username", validators=[DataRequired()])
     email = StringField("Email", validators=[DataRequired(), Email()])

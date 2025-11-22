@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="content">
+    <form action="" method="post">
+        <h4>Create Article</h4>
+        {{form.hidden_tag()}} <br>
+        {{form.api_key.label}} {{form.api_key}}<br>
+        {{form.n_iterations.label}} {{form.n_iterations}}<br>
+        {{form.model_name.label}} {{form.model_name}} <br>
+        {{form.submit()}}
+    </form>
+</div>
+{% endblock %}

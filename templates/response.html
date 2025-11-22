@@ -2,12 +2,23 @@
 
 {% block link %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.25/dist/katex.min.js" integrity="sha384-J+9dG2KMoiR9hqcFao0IBLwxt6zpcyN68IgwzsCSkbreXUjmNVRhPFTssqdSGjwQ" crossorigin="anonymous"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.25/dist/contrib/auto-render.min.js" integrity="sha384-hCXGrW6PitJEwbkoStFjeJxv+fSOOQKOPbJxSfM6G5sWZjAyWhXiTIIAmQqnlLlh" crossorigin="anonymous"
-onload="renderMathInElement(document.body);"></script>
+<link rel="stylesheet" href="{{url_for('static', filename='css/response.css')}}">
 {% endblock %}
 
 {% block content %}
-<div class="response-content" id="responseContent">
-</div>
+{% if showing %}
+   <leftside class="response-content left" id="responseContent"> 
+   </leftside>
+
+   <rightside class="article-content right" id="articleContent"> 
+   </rightside>
+{% else %}
+   <leftside class="response-content left" id="responseContent"> 
+      {{ markdown_left|safe }}   
+   </leftside>
+
+   <rightside class="article-content right" id="articleContent">
+        {{ markdown_right|safe }} 
+   </rightside>
+{% endif %}
 {% endblock %}
