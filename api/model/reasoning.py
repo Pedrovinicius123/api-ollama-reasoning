@@ -8,7 +8,7 @@ PROBLEM: {problem}
 THINK LOUDLY!
 1. Break the problem into {width} step alternatives to adress it
 2. Choose one alternative
-3. DO NOT USE CONJECTURES. Only use well known theorems, lemmas and mathematical concepts. 
+3. DO NOT USE CONJECTURES. Only use well known theorems, lemmas and mathematical concepts.
 
 Do not write an answer yet, only propose the alternatives.
 Display math in KATEX form
@@ -37,7 +37,7 @@ For subsequent sections, follow this structure:
    4. Results: Present the findings and any solutions derived from the reasoning process.
    5. Conclusion: Summarize the key points and implications of the results.
 
-""" 
+"""
 
 article_prompt_continue = lambda n_tokens_per_gen: f"""
 Continue generating the article current section with subsections to explain and formalize the reasoning process in detail.
@@ -51,43 +51,51 @@ class Reasoning:
     def __init__(self, api_key:str, max_width:int, max_depth:int, model_name:str="deepseek-v3.1:671b-cloud", n_tokens_default:int=100000):
         self.max_width = max_width
         self.max_depth = max_depth
-        self.model = model_name 
+        self.model = model_name
         self.n_tokens_default = n_tokens_default
         self.api_key = api_key
 
-    def reasoning_step(self, username:str, query:str, log_dir:str, init=True):        
+    def reasoning_step(self, username:str, query:str, log_dir:str, init=True):
         prompt = generate_prompt(query, self.max_width) if init else continue_prompt(self.max_width)
         user = User.objects(username=username).first()
-        
+
         obj_context = Upload.objects(filename__contains=os.path.join(log_dir, 'context.md'), creator=user).first()
-        self.context = obj_context.file.read().decode('utf-8') if obj_context is not None else ""
+        obj_context = Upload.objects(filename__contains=os.path.join(log_dir, 'response.md'), creator=user).first()
+
+        context = obj_context.file.read().decode('utf-8') if obj_context is not None and obj_context.file.read() is not None else ""
+        response = obj_context.file.read().decode('utf-8') if obj_response is not None and obj_response.file is not None else ''
 
         # Request returns a stream/iterator of chunks
-        r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=prompt, context=self.context, n_tokens=self.n_tokens_default)
+        r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=prompt, context=context, n_tokens=self.n_tokens_default)
         # add prompt to context first
-        self.context += "\n\n" + prompt + "\n\n"
+        context += "\n\n" + prompt + "\n\n"
         obj_context.depth += 1
 
-        def iterate():
+        def iterate(context=context):
             for chunk in r:
                 if 'message' in chunk:
                     content = chunk['message'].get('content', '')
                     # accumulate into context while streaming
-                    self.context += content
-                    obj_context.file.replace(self.context.encode('utf-8'), content_type="text/markdown")
+                    context += content
+                    response += content
+
+                    obj_response.file.replace(response.encode('utf-8'), content_type='text/markdown')
+                    obj_response.save()
+
+                    obj_context.file.replace(context.encode('utf-8'), content_type="text/markdown")
                     obj_context.save()
 
                     yield content
 
         return iterate()
 
-    def generate_article_step(self, username:str, content:str, log_dir:str, iteration:int):
+    def generate_article_step(self, username:str, content:str, log_dir:str):
         user = User.objects(username=username).first()
         article_obj = Upload.objects(filename__contains=os.path.join(log_dir, 'article.md'), creator=user).first()
-        anterior_generated = article_obj.file.read().decode('utf-8') if article_obj is not None else ""
-        
+        anterior_generated = article_obj.file.read().decode('utf-8') if article_obj is not None else " "
+
         context = f"\n\nPREVIOUSLY GENERATED ARTICLE CONTENT:\n{self.anterior_generated}"
-        prompt = article_prompt(self.n_tokens_default) if iteration == 0 else article_prompt_continue(self.n_tokens_default)
+        prompt = article_prompt(self.n_tokens_default) if anterior_generated == " " else article_prompt_continue(self.n_tokens_default)
         prompt += f"\n\nCONTENT TO FORMALIZE:\n{content}\n\n"
         r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=prompt, context=context, n_tokens=self.n_tokens_default)
 

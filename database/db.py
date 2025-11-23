@@ -22,7 +22,7 @@ class User(Document):
         if not getattr(self, 'password_hash', None):
             return False
         return check_password_hash(self.password_hash, password)
-    
+
 class Upload(Document):
     creator = ReferenceField(User)
     id = IntField(primary_key=True)
@@ -46,7 +46,7 @@ def upload_file(user:User, log_dir:str, filename:str, raw_file, depth:int):
 
     else:
         print("Updating existing file...")
-        content = existing.file.read()
+        content = existing.file.read() if existing.file.read() is not None else " ".encode("utf-8")
         existing.file.delete()
         existing.depth = depth
         existing.file.put(content + raw_file, content_type="text/markdown")

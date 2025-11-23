@@ -7,6 +7,36 @@
 
 {% block content %}
 {% if not showing %}
+   {% if log_url %}
+   <script type="text/javascript">
+     function fetchWithDelay(i, depth) {
+          if (i >= depth) return;
+          fetch("{{log_url}}")
+              .then(response => response.json())
+              .then(data => {
+                  document.getElementById('responseContent').innerText += data.text;
+             // Agenda o próximo após 1 segundo
+                  setTimeout(() => fetchWithDelay(i + 1, depth), 1000);
+          });
+     }
+     fetchWithDelay(0, {{depth}});
+   </script>
+   {% endif %}
+   {% if article_url %}
+   <script type="text/javascript">
+     function fetchWithDelay(i, depth) {
+          if (i >= depth) return;
+          fetch("{{article_url}}")
+              .then(response => response.json())
+              .then(data => {
+                  document.getElementById('responseContent').innerText += data.text;
+             // Agenda o próximo após 1 segundo
+                  setTimeout(() => fetchWithDelay(i + 1, depth), 1000);
+          });
+     }
+     fetchWithDelay(0, {{n_iterations}});
+   </script>
+   {% endif %}
    <leftside class="response-content left" id="responseContent">
    </leftside>
 
