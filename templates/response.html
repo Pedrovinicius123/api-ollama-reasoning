@@ -6,19 +6,19 @@
 {% endblock %}
 
 {% block content %}
-{% if showing %}
-   <leftside class="response-content left" id="responseContent"> 
-   </leftside>
-
-   <rightside class="article-content right" id="articleContent"> 
-   </rightside>
-{% else %}
-   <leftside class="response-content left" id="responseContent"> 
-      {{ markdown_left|safe }}   
+{% if not showing %}
+   <leftside class="response-content left" id="responseContent">
    </leftside>
 
    <rightside class="article-content right" id="articleContent">
-        {{ markdown_right|safe }} 
+   </rightside>
+{% else %}
+   <leftside class="response-content left" id="responseContent">
+      {{ markdown_left|safe }}
+   </leftside>
+
+   <rightside class="article-content right" id="articleContent">
+      {{ markdown_right|safe }}
    </rightside>
 {% endif %}
 {% endblock %}

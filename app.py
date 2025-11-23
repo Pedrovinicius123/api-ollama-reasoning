@@ -46,8 +46,8 @@ def store_data(username: str, **kwargs):
     if user is None:
         print("store_data: user not found", username)
         return
-    
-    
+
+
     print("store_data max_depth:", kwargs.get("max_depth"))
     for i in range(int(kwargs.get("max_depth"))):
         print(f"Thread depth {i}")
@@ -68,12 +68,12 @@ def store_data(username: str, **kwargs):
         with app.app_context():
             # render only the fragment that will be appended to the page
             turbo.push(turbo.append(render_template('_response_fragment.html', content=read_markdown_to_html(content)), 'responseContent'))
-        
+
         if "SOLVED" in content and "PROGRESS" not in content:
             print("store_data: problem solved, stopping further processing.")
             break
 
-        
+
         time.sleep(4)  # allow turbo to process
         print(f"store_data: depth {i} received content length:", len(content))
             # save the aggregated content for this depth once
@@ -81,11 +81,11 @@ def store_data(username: str, **kwargs):
             with app.app_context():
                 upload_file(user, kwargs.get("log_dir"), 'response.md', content.encode('utf-8'), i)
                 upload_file(user, kwargs.get("log_dir"), 'context.md', thinker.context.encode('utf-8'), i)
-                
+
         except Exception as e:
             print("store_data: failed to upload file:", e)
-        
-        #print(thinker.context)     
+
+        #print(thinker.context)
         print("manager threads:", manager.threads)
 
 def store_data_article(username:str, log_dir:str, n_iterations, **kwargs):
@@ -98,14 +98,14 @@ def store_data_article(username:str, log_dir:str, n_iterations, **kwargs):
     if user is None:
         print("store_data_article: user not found", username)
         return
-    
+
     for i in range(n_iterations):
         kwargs['iteration'] = i
         article_url = None
         with app.app_context():
             print(f"store_data_article iteration {i}")
             article_url = url_for('bp_processing_api.create_article', **kwargs)
-        
+
         resp = requests.get(article_url, stream=True)
         content = ""
 
@@ -121,7 +121,7 @@ def store_data_article(username:str, log_dir:str, n_iterations, **kwargs):
             with app.app_context():
                 # render only the fragment that will be appended to the page
                 turbo.push(turbo.append(render_template('_article_fragment.html', content=read_markdown_to_html(content)), 'articleContent'))
-    
+
             print("store_data_article received content length:", len(content))
             time.sleep(0.1)  # allow turbo to process
         # save the aggregated content
@@ -130,7 +130,7 @@ def store_data_article(username:str, log_dir:str, n_iterations, **kwargs):
         except Exception as e:
             print("store_data_article: failed to upload file:", e)
 
-        
+
 
 def check_if_logged_in(f):
     @wraps(f)
@@ -191,7 +191,7 @@ def login():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    form = CreateUser()       
+    form = CreateUser()
     if form.validate_on_submit():
         username = form.username.data
         email = form.email.data
@@ -225,8 +225,12 @@ def view_logs_and_article(username:str, log_dir:str):
     if objs.first() is None:
         flash("No logs found for this user/log_dir", 'error')
         return redirect(url_for('home'))
-    
-    return render_template('response.html', showing=True, markdown_left=read_markdown_to_html(objs.first().file.read().decode('utf-8')), markdown_right=read_markdown_to_html(objs_article.first().file.read().decode('utf-8')))
+
+    elif objs_article.first() is None:
+        objs_article = ""
+        return render_template('response.html', showing=True, markdown_left=read_markdown_to_html(objs.first().file.read().decode('utf-8')), markdown_right=objs_article)
+    return render_template('response.html', showing=True, markdown_left=read_markdown_to_html(objs.first().file.read().decode('utf-8')), markdown_right=read_markdown_to_html(objs.first().file.read().decode('utf-8')))
+
 
 @app.route("/<username>/<log_dir>?query=<query>&model=<model>&max_width=<max_width>&max_depth=<max_depth>&n_tokens=<n_tokens>&api_key=<api_key>")
 @check_if_logged_in
@@ -246,7 +250,7 @@ def write(username:str, log_dir:str, query:str, model:str, max_width:int, max_de
     # append thread in a thread-safe way so ThreadManager can pick it up
     with manager.lock:
         manager.threads.append(t)
-    
+
     print("queued thread", t)
     return render_template('response.html', showing=False)
 
@@ -258,7 +262,7 @@ def write_article(username:str, log_dir:str, n_tokens:int, api_key:str, n_iterat
     # append thread in a thread-safe way so ThreadManager can pick it up
     with manager.lock:
         manager.threads.append(t)
-    
+
     print("queued article thread", t)
     return render_template('response.html', showing=False)
 
@@ -283,7 +287,7 @@ def submit_question():
     if form.validate_on_submit() and request.method == 'POST':
         # Form validation and processing
         print(User.objects(username=session.get('username')).first())
-        
+
         time.sleep(1)
         obj_context = upload_file(
             user=User.objects(username=session.get('username')).first(),
@@ -313,7 +317,7 @@ def submit_question():
 
         return redirect(url_for('write', query=form.query.data, prompt=None, username=session.get('username'), log_dir=form.log_dir.data or 'default_log', model=form.model_name.data or "deepseek-v3.1:671b-cloud", max_width=form.max_width.data, max_depth=form.max_depth.data, n_tokens=form.n_tokens.data if form.n_tokens.data is not None else 100000, api_key=form.api_key.data))
     return render_template('form.html', form=form)
-    
+
 
 if __name__ == '__main__':
     app.run(debug=True)
