@@ -22,7 +22,7 @@ class User(Document):
         if not getattr(self, 'password_hash', None):
             return False
         return check_password_hash(self.password_hash, password)
-    
+
 class Upload(Document):
     creator = ReferenceField(User)
     id = IntField(primary_key=True)
@@ -43,6 +43,8 @@ def upload_file(user:User, log_dir:str, filename:str, raw_file, initial:bool=Fal
         new_upload_doc.file.put(raw_file, content_type="text/markdown")
         new_upload_doc.save()
 
+        return new_upload_doc
+
     else:
         content = b" "
         if not initial:
@@ -52,3 +54,5 @@ def upload_file(user:User, log_dir:str, filename:str, raw_file, initial:bool=Fal
         
         existing.file.replace(content + raw_file, content_type="text/markdown")
         existing.save()
+
+        return existing

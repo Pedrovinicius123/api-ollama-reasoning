@@ -51,10 +51,9 @@ class Reasoning:
     def __init__(self, api_key:str, max_width:int, max_depth:int, model_name:str="deepseek-v3.1:671b-cloud", n_tokens_default:int=100000):
         self.max_width = max_width
         self.max_depth = max_depth
-        self.model = model_name 
+        self.model = model_name
         self.n_tokens_default = n_tokens_default
         self.api_key = api_key
-        self.context = ""
 
     def reasoning_step(self, username:str, log_dir:str, query:str, init=False, prompt=None):
         #print(depth)

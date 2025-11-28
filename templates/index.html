@@ -14,4 +14,7 @@
         <li><a href="/submit_question">Make a Revolution</a></li>       
     </ul>
 </div>
+{% for message in get_flashed_messages()%}
+    <div class="flash">{{ message }}</div>
+{% endfor %}
 {% endblock %}
