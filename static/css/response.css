@@ -14,7 +14,7 @@
 }
 
 .container {
-    max-width: 800px;
+    max-width: 600px;
     margin: 0 auto;
     /* inner content should flow normally; scrolling is handled by the panel */
     overflow: visible;

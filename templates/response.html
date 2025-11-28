@@ -10,7 +10,7 @@
         {{read_markdown_to_html(response.file.read().decode("utf-8"))|safe}}
     {% endif %}
 </leftside>
-<rightside class="article-content markdown" id="responseArticle">
+<rightside class="article-content markdown" id="articleContent">
     {% if article %}
         {{read_markdown_to_html(article.file.read().decode("utf-8"))|safe}}
     {% endif %}

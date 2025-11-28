@@ -14,11 +14,18 @@ class SubmitQueryForm(FlaskForm):
     model_name = StringField("Model name", validators=[Optional()])
     submit = SubmitField('submit')
 
+class CreateArticle(FlaskForm):
+    log_dir = StringField("Directory to parse", validators=[DataRequired()])
+    n_iterations = IntegerField("Number of pages", validators=[DataRequired()])
+    api_key = StringField("Ollama API key", validators=[DataRequired()])
+    model = StringField("Model", validators=[Optional()])
+    submit = SubmitField("Create Article")
+
 class CreateUser(FlaskForm):
     username = StringField("Username", validators=[DataRequired()])
     email = StringField("Email", validators=[DataRequired(), Email()])
     password = PasswordField("Password", validators=[DataRequired(), EqualTo('confirm', message="Passwords must match")])
-    confirm = PasswordField("Password", validators=[DataRequired()])
+    confirm = PasswordField("Confirm Password", validators=[DataRequired()])
     submit = SubmitField("Register")
 
 class LoginUser(FlaskForm):

@@ -24,7 +24,7 @@ If any solution encountered, return SOLVED, else *only return PROGRESS*
 """
 
 article_prompt = lambda iterations: f"""
-Now, write a detailed article about the problem and the solution, using the following structure:
+Now, write a detailed article about the problem in the logs and the solution, using the following structure:
 
 1. Introduction: Briefly introduce the problem and its significance.
 2. Problem Statement: Clearly state the problem and any assumptions.
@@ -33,7 +33,8 @@ Now, write a detailed article about the problem and the solution, using the foll
 5. Conclusion: Summarize the findings and discuss any implications or future work.
 
 Render math in KATEX form.
-MAKE SURE TO WRITE WITHIN THE NUMBER OF ITERATIONS BELLOW:
+MAKE SURE TO WRITE WITHIN THE NUMBER OF ITERATIONS BELLOW, AND FOR EACH STEP OF THE ITERATIONS,
+WRITE A DISTINCT SECTION:
 Iterations {iterations}
 Current_iteration: 1
 """
@@ -65,8 +66,7 @@ class Reasoning:
         obj_response = Upload.objects(filename__contains=os.path.join(log_dir, 'response.md'), creator=User.objects(username=username).first()).first()
         if not obj_response:
             raise ValueError("No response file found for reasoning step.")
-        
-        obj_file.file.delete()
+
         def iterate():
             context = " "
             response = " "
@@ -82,6 +82,9 @@ class Reasoning:
                         # accumulate into context while streaming
                         context += content
                         response += content
+
+                        if "SOLVED" in content:
+                            return "Solved the problem", 200
 
                         yield content
                 
@@ -101,15 +104,15 @@ class Reasoning:
                     raw_file=(context+"\n").encode('utf-8')
                 )
 
-        return iterate()
+        return iterate(), 200
 
-    def write_article(self, username:str, log_dir:str, iterations:int):
+    def write_article(self, username:str, log_dir:str, iterations:int, n_tokens:int):
         def iterate():
             prev_generated = " "
             for i in range(iterations):                
                 prompt = article_prompt(iterations) if i == 0 else article_prompt_continue(i+1)
                 prev_generated += "\n\n" + prompt + "\n\n"
-                r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=prompt, context=prev_generated, n_tokens=self.n_tokens_default)
+                r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=prompt, context=prev_generated, n_tokens=n_tokens)
                 
                 for chunk in r:
                     if 'message' in chunk:

@@ -5,7 +5,7 @@ from functools import wraps
 from datetime import timedelta
 from api.model.reasoning import Reasoning
 
-from forms.user import SubmitQueryForm, LoginUser, CreateUser
+from forms.user import SubmitQueryForm, CreateArticle, LoginUser, CreateUser
 from forms.search import Search
 from markupsafe import Markup
 from markdown import markdown
@@ -55,8 +55,8 @@ def check_if_logged_in(f):
 # onde o sistema pode lidar com múltiplas requisições simultaneamente sem bloquear a aplicação principal.
 # Elas também atualizam o conteúdo na interface do usuário em tempo real usando Turbo-Flask.
 
-def store_article(username: str, log_dir: str, model: str = None, iterations: str = "1", api_key: str = None):
-    
+def store_article(username: str, log_dir: str, model: str = None, iterations: str = "1", api_key: str = None, n_tokens: int = 65000):
+    iterations_int = 0
     user = User.objects(username=username).first()
     if user is None:
         print("User not found, cannot store article.")
@@ -76,7 +76,7 @@ def store_article(username: str, log_dir: str, model: str = None, iterations: st
     article_content = ""
     # Run the article generator directly to preserve the session/username
     with app.app_context():
-        gen = thinker.write_article(username=username, log_dir=log_dir, iterations=iterations_int)
+        gen = thinker.write_article(username=username, log_dir=log_dir, iterations=iterations_int, n_tokens=n_tokens)
         for chunk in gen:
             if chunk:
                 article_content += chunk
@@ -114,8 +114,11 @@ def store_response(query: str, username: str, log_dir: str, model: str = None, m
 
     # Run the reasoning generator directly to preserve session/username
     with app.app_context():
-        gen = thinker.reasoning_step(username=username, log_dir=log_dir, query=query or "", init=False, prompt=None if prompt == 'None' else prompt)
+        gen, response = thinker.reasoning_step(username=username, log_dir=log_dir, query=query or "", init=False, prompt=None if prompt == 'None' else prompt)
         for chunk in gen:
+            if chunk == "Solved the problem":
+                break
+            
             if chunk:
                 response_content += chunk
                 turbo.push(turbo.update(render_template('_response_fragment.html', content=read_markdown_to_html(response_content)), 'responseContent'))
@@ -259,6 +262,9 @@ def view_logs(username:str, log_dir:str):
 @app.route("/<username>/<log_dir>/write_logs")
 @check_if_logged_in
 def write(username:str, log_dir:str):
+    if username != session.get("username"):
+        return redirect(url_for("home"))
+    
     query = request.args.get('query')
     model = request.args.get('model')
     max_width = request.args.get('max_width')
@@ -274,20 +280,23 @@ def write(username:str, log_dir:str):
 
     return render_template('response.html', reponse=False, article=False, read_markdown_to_html=read_markdown_to_html)
 
-@app.route("/<username>/<log_dir>/write_article")
+@app.route("/<username>/<log_dir>/write_article", methods=["GET", "POST"])
 @check_if_logged_in
 def write_article(username:str, log_dir:str):
-    model=request.args.get('model')
+    
+    model = request.args.get("model")
     iterations = request.args.get('iterations')
     api_key = request.args.get('api_key')
 
     t = threading.Thread(target=store_article, args=(username, log_dir, model, iterations, api_key))
     # append thread in a thread-safe way so ThreadManager can pick it up
+    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()
+    
     with manager.lock:
         manager.threads.append(t)
     
     print("queued thread", t)
-    return render_template('article.html')
+    return render_template('response.html', response=response, article=False, read_markdown_to_html=read_markdown_to_html)
 
 @app.route("/submit_question", methods=["GET", "POST"])
 @check_if_logged_in
@@ -322,6 +331,22 @@ def submit_question():
 
         return redirect(url_for('write', query=form.query.data, prompt=None, username=session.get('username'), log_dir=form.log_dir.data or 'default_log', model=form.model_name.data or "deepseek-v3.1:671b-cloud", max_width=form.max_width.data, max_depth=form.max_depth.data, n_tokens=form.n_tokens.data if form.n_tokens.data is not None else 100000, api_key=form.api_key.data))
     return render_template('form.html', form=form)
+
+@app.route("/submit_article", methods=["GET", "POST"])
+@check_if_logged_in
+def submit_article():
+    form = CreateArticle()
+    if form.validate_on_submit():
+        log_dir = form.log_dir.data
+        iterations = form.n_iterations.data
+        api_key = form.api_key.data
+        model = form.model.data if form.model.data else thinker.model
+
+        return redirect(url_for("write_article", username=session.get("username"), log_dir=log_dir, model=model, n_iterations=iterations, api_key=api_key))
+    return render_template("create_article.html", form=form)
+                        
+
+
 
 if __name__ == '__main__':
     # Enable threading so worker threads can make HTTP requests back to this server
