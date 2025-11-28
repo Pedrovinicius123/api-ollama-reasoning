@@ -1,6 +1,35 @@
+"""
+Sistema de Raciocínio em Profundidade com Geração de Artigos
+
+Este módulo implementa um sistema de raciocínio matemático estruturado que:
+1. Quebra problemas em múltiplas alternativas (width)
+2. Explora alternativas em profundidade (depth)
+3. Mantém contexto e histórico de raciocínio
+4. Gera artigos estruturados sobre as descobertas
+
+Características:
+- Raciocínio iterativo: Múltiplas passagens para aprofundamento
+- Alternativas paralelas: Explora múltiplos caminhos simultaneamente
+- Contexto acumulativo: Cada passo tem acesso ao histórico
+- Geração de artigos: Estrutura automática com seções específicas
+- Validação: Apenas conceitos e teoremas bem conhecidos
+- Renderização: Math em KaTeX para display
+
+Dependências:
+- ollama: Interface com servidor Ollama
+- mongoengine: Persistência em MongoDB
+- math: Cálculos de alocação de iterações
+"""
+
 from api.model.api_main import make_request_ollama_reasoning
 from database.db import Upload, User, upload_file
 import os
+import math
+
+
+# ============================================================================
+# GERADORES DE PROMPTS - TEMPLATES PARAMETRIZADOS
+# ============================================================================
 
 generate_prompt = lambda width, prompt: f"""
 THINK LOUDLY!
@@ -13,6 +42,19 @@ PROBLEM: {prompt}
 Do not write an answer yet, only propose the alternatives.
 Use $$ for block math and $ for inline math.
 """
+"""
+Prompt inicial para gerar alternativas de solução.
+
+Instrui o modelo a:
+1. Quebrar problema em {width} alternativas
+2. Selecionar uma para explorar
+3. Usar apenas conceitos matemáticos conhecidos
+4. Não propor conjecturas (apenas conceitos estabelecidos)
+5. Renderizar math em KaTeX
+
+Retorna: string com o prompt formatado
+"""
+
 
 continue_prompt = lambda width: f"""
 Now, extensively create an mathematical approximation using this alternative,
@@ -22,6 +64,19 @@ Remember: don't use any conjecture, only theorems, lemmas and other mathematical
 If any solution encountered, return SOLVED, else *only return PROGRESS*
 *Display math in $$ for block equations and $ for inline*
 """
+"""
+Prompt para continuação do raciocínio em profundidade.
+
+Instrui o modelo a:
+1. Explorar a alternativa selecionada com rigor matemático
+2. Propor {width} novas alternativas baseadas no resultado
+3. Retornar 'SOLVED' se solução for encontrada
+4. Retornar 'PROGRESS' se continuação for necessária
+5. Usar apenas conceitos bem conhecidos
+
+Retorna: string com o prompt formatado
+"""
+
 
 article_prompt = lambda iterations: f"""
 Now, write a detailed article about the problem in the logs and the solution, using the following structure:
@@ -29,66 +84,254 @@ Now, write a detailed article about the problem in the logs and the solution, us
 1. Introduction: Briefly introduce the problem and its significance.
 2. Problem Statement: Clearly state the problem and any assumptions.
 3. Methodology: Describe the approach taken to solve the problem, including any algorithms or techniques used.
-4. Results: Present the results of the solution, including any relevant data or visualizations.
+4. Results: Present the findings, including any relevant data, graphs, or equations.
 5. Conclusion: Summarize the findings and discuss any implications or future work.
 
 Render math in KATEX form.
-MAKE SURE TO WRITE WITHIN THE NUMBER OF ITERATIONS BELLOW, AND FOR EACH STEP OF THE ITERATIONS,
-WRITE A DISTINCT SECTION:
+MAKE SURE TO WRITE WITHIN THE NUMBER OF ITERATIONS BELLOW
 Iterations {iterations}
+
+RESERVE iterations 1 - {math.floor(iterations*0.2)}  for introduction (1.)
+RESERVE iterations {math.floor(iterations*0.2)} - {math.floor(iterations*0.4)} for problem statement (2.)
+RESERVE iterations {math.floor(iterations*0.4)} - {math.floor(iterations*0.6)} for methodology (3.)
+RESERVE iterations {math.floor(iterations*0.6)} - {math.floor(iterations*0.8)} for results (4.)
+RESERVE iterations {math.floor(iterations*0.8)} - {iterations} for conclusion (5.)
+
 Current_iteration: 1
 """
+"""
+Prompt inicial para geração de artigo estruturado.
 
-article_prompt_continue = lambda iteration: f"""
+Estrutura do artigo (com alocação automática de iterações):
+- Introdução: 20% das iterações
+- Declaração do Problema: 20% das iterações
+- Metodologia: 20% das iterações
+- Resultados: 20% das iterações
+- Conclusão: 20% das iterações
+
+Usa divisão inteira para garantir cobertura completa.
+
+Retorna: string com o prompt formatado
+"""
+
+
+article_prompt_continue = lambda iteration, iterations: f"""
 Continue writing the article, expanding on the Methodology and Results sections.
 Make sure to include any additional insights or observations that may be relevant.
 Render math in KATEX form.
+
+RESERVE iterations 1 - {math.floor(iterations*0.2)}  for introduction (1.)
+RESERVE iterations {math.floor(iterations*0.2)} - {math.floor(iterations*0.4)} for problem statement (2.)
+RESERVE iterations {math.floor(iterations*0.4)} - {math.floor(iterations*0.6)} for methodology (3.)
+RESERVE iterations {math.floor(iterations*0.6)} - {math.floor(iterations*0.8)} for results (4.)
+RESERVE iterations {math.floor(iterations*0.8)} - {iterations} for conclusion (5.)
+
 Current_iteration: {iteration}
 
 """
+"""
+Prompt para continuação de artigo.
+
+Mantém informações de alocação de iterações para consistência.
+Foca em expandir Metodologia e Resultados nas iterações centrais.
+
+Retorna: string com o prompt formatado
+"""
+
+
+# ============================================================================
+# CLASSE PRINCIPAL - REASONING
+# ============================================================================
 
 class Reasoning:
-    def __init__(self, api_key:str, max_width:int, max_depth:int, model_name:str="deepseek-v3.1:671b-cloud", n_tokens_default:int=100000):
+    """
+    Sistema de Raciocínio em Profundidade para Problemas Matemáticos.
+    
+    Implementa um algoritmo de raciocínio estruturado que:
+    1. Gera múltiplas alternativas para resolver um problema
+    2. Explora cada alternativa em profundidade
+    3. Acumula contexto entre passos para continuidade
+    4. Detecta quando um problema foi resolvido
+    5. Gera artigos sobre o processo e resultado
+    
+    Parâmetros de Raciocínio:
+    - max_width: Número de alternativas a explorar por nível (padrão: 5)
+    - max_depth: Profundidade máxima de exploração (padrão: 20)
+    - model: Modelo Ollama a usar (padrão: "deepseek-v3.1:671b-cloud")
+    - n_tokens_default: Tokens máximos por geração (padrão: 100000)
+    
+    Attributes:
+        max_width (int): Número de alternativas por nível de raciocínio
+        max_depth (int): Profundidade máxima de exploração
+        model (str): Nome do modelo Ollama
+        n_tokens_default (int): Número padrão de tokens a gerar
+        api_key (str): Chave de autenticação para Ollama
+    
+    Methods:
+        reasoning_step: Executa um passo de raciocínio
+        write_article: Gera artigo estruturado baseado no raciocínio
+    """
+    
+    def __init__(self, api_key: str, max_width: int, max_depth: int, model_name: str = "deepseek-v3.1:671b-cloud", n_tokens_default: int = 100000):
+        """
+        Inicializa o sistema de raciocínio.
+        
+        Args:
+            api_key (str): Chave de autenticação para Ollama (pode ser atualizada depois)
+            max_width (int): Número de alternativas a explorar por nível
+            max_depth (int): Profundidade máxima de raciocínio em passos
+            model_name (str): Nome do modelo Ollama. Defaults to "deepseek-v3.1:671b-cloud"
+            n_tokens_default (int): Tokens máximos por geração. Defaults to 100000
+        
+        Exemplos:
+            >>> # Criar sistema com parâmetros padrão
+            >>> thinker = Reasoning('', max_width=5, max_depth=20)
+            >>> 
+            >>> # Depois atualizar a chave de API
+            >>> thinker.api_key = 'chave_real_aqui'
+        """
         self.max_width = max_width
         self.max_depth = max_depth
         self.model = model_name
         self.n_tokens_default = n_tokens_default
         self.api_key = api_key
 
-    def reasoning_step(self, username:str, log_dir:str, query:str, init=False, prompt=None):
-        #print(depth)
+    def reasoning_step(self, username: str, log_dir: str, query: str, init: bool = False, prompt=None):
+        """
+        Executa um processo de raciocínio em profundidade sobre um problema.
+        
+        Este método:
+        1. Busca o arquivo de contexto (context.md) para histórico
+        2. Busca o arquivo de resposta (response.md) para acumular resultado
+        3. Executa loop de raciocínio até max_depth iterações
+        4. Em cada iteração:
+           - Gera prompt inicial ou de continuação
+           - Faz requisição ao Ollama
+           - Acumula resposta no contexto
+           - Verifica se problema foi "SOLVED"
+           - Atualiza os arquivos no banco de dados
+        5. Retorna generator que streaming da resposta
+        
+        Estrutura de Contexto Acumulativo:
+        ```
+        Contexto inicial:
+        1. System prompt (instruções)
+        2. Histórico de perguntas e respostas anteriores
+        
+        A cada iteração:
+        - Adiciona novo prompt
+        - Adiciona resposta do modelo
+        - Próxima iteração vê tudo anterior
+        ```
+        
+        Args:
+            username (str): Nome do usuário proprietário do log
+            log_dir (str): Diretório para armazenar os logs
+            query (str): Pergunta/problema principal a resolver
+            init (bool): Se True, é o início (usa generate_prompt). 
+                        Se False, usa continue_prompt. Defaults to False
+            prompt (str, optional): Prompt customizado (não é usado atualmente)
+        
+        Yields:
+            str: Chunks de conteúdo da resposta conforme são gerados
+            
+        Returns:
+            Tuple[Generator, int]: (gerador de chunks, código de status HTTP)
+        
+        Raises:
+            ValueError: Se context.md ou response.md não forem encontrados
+        
+        Database Persistence:
+            - Busca context.md: histórico de raciocínio
+            - Busca response.md: respostas acumuladas
+            - Atualiza após cada iteração:
+              * context.md: com novo prompt + resposta
+              * response.md: com nova resposta
+        
+        Condição de Parada:
+            - Atinge max_depth iterações, OU
+            - Resposta contém "SOLVED"
+        
+        Exemplos:
+            >>> gen, status = thinker.reasoning_step(
+            ...     username='usuario1',
+            ...     log_dir='problema_1',
+            ...     query='Qual é a integral de sin(x)?',
+            ...     init=True
+            ... )
+            >>> for chunk in gen:
+            ...     print(chunk, end='', flush=True)
+        """
         print(os.path.join(log_dir, 'context.md'), username)
+        
+        # Busca arquivo de contexto (histórico de raciocínio)
         obj_file = Upload.objects(filename__contains=os.path.join(log_dir, 'context.md'), creator=User.objects(username=username).first()).first()
         if not obj_file:
             raise ValueError("No context file found for reasoning step.")
         
+        # Busca arquivo de resposta (acumula resultado)
         obj_response = Upload.objects(filename__contains=os.path.join(log_dir, 'response.md'), creator=User.objects(username=username).first()).first()
         if not obj_response:
             raise ValueError("No response file found for reasoning step.")
 
         def iterate():
+            """
+            Função interna que implementa o loop de raciocínio.
+            
+            Yields:
+                str: Chunks da resposta conforme gerados pelo Ollama
+                
+            Lógica:
+            1. Inicia context e response vazios (serão carregados do DB)
+            2. Para cada profundidade até max_depth:
+               - Seleciona prompt (inicial ou continuação)
+               - Faz requisição ao Ollama com context+prompt
+               - Stream os chunks enquanto acumula em context
+               - Se vê "SOLVED", termina loop
+               - Atualiza DB com novo context e response
+            3. Retorna após max_depth iterações ou quando SOLVED
+            """
             context = " "
             response = " "
+            
+            # Loop de raciocínio profundo
             for i in range(self.max_depth):
-                current_prompt = generate_prompt(self.max_width, query) if init or i == 0 else continue_prompt(self.max_width)
-                r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=current_prompt, context=context, n_tokens=self.n_tokens_default)
+                # Seleciona qual prompt usar
+                if init or i == 0:
+                    # Primeiro passo: gerar alternativas iniciais
+                    current_prompt = generate_prompt(self.max_width, query)
+                else:
+                    # Passos seguintes: continuar explorando
+                    current_prompt = continue_prompt(self.max_width)
                 
+                # Faz requisição ao Ollama
+                r = make_request_ollama_reasoning(
+                    api_key=self.api_key, 
+                    model_name=self.model, 
+                    prompt=current_prompt, 
+                    context=context, 
+                    n_tokens=self.n_tokens_default
+                )
+                
+                # Acumula o prompt no contexto para próxima iteração
                 context += "\n\n" + current_prompt + "\n\n"
 
+                # Stream dos chunks da resposta
                 for chunk in r:
                     if 'message' in chunk:
                         content = chunk['message'].get('content', '')
-                        # accumulate into context while streaming
+                        # Acumula em contexto e resposta
                         context += content
                         response += content
 
+                        # Verifica se problema foi resolvido
                         if "SOLVED" in content:
                             return "Solved the problem", 200
 
+                        # Yield para o frontend em tempo real
                         yield content
-                
 
-
+                # Atualiza response.md no banco de dados
                 upload_file(
                     user=User.objects(username=username).first(),
                     log_dir=log_dir,
@@ -96,6 +339,7 @@ class Reasoning:
                     raw_file=(response+"\n").encode('utf-8')
                 )
 
+                # Atualiza context.md no banco de dados (para continuidade)
                 upload_file(
                     user=User.objects(username=username).first(),
                     log_dir=log_dir,
@@ -105,22 +349,102 @@ class Reasoning:
 
         return iterate(), 200
 
-    def write_article(self, username:str, log_dir:str, iterations:int, n_tokens:int):
+    def write_article(self, username: str, log_dir: str, iterations: int, n_tokens: int):
+        """
+        Gera um artigo estruturado baseado no raciocínio realizado.
+        
+        Este método:
+        1. Carrega o contexto/response do raciocínio anterior
+        2. Executa múltiplas iterações para construir artigo
+        3. Em cada iteração:
+           - Usa prompt estruturado para seção específica
+           - Acumula conteúdo anterior para contexto
+           - Faz requisição ao Ollama
+           - Atualiza article.md no banco
+        
+        Estrutura do Artigo (com alocação automática):
+        ```
+        Iterações 1-20%: Introdução
+        Iterações 20%-40%: Declaração do Problema
+        Iterações 40%-60%: Metodologia
+        Iterações 60%-80%: Resultados
+        Iterações 80%-100%: Conclusão
+        ```
+        
+        Esta estrutura é mantida no prompt para orientar geração.
+        
+        Args:
+            username (str): Proprietário do artigo
+            log_dir (str): Diretório contendo o raciocínio anterior
+            iterations (int): Número de iterações (seções) a gerar
+            n_tokens (int): Tokens máximos por iteração
+        
+        Yields:
+            str: Chunks do artigo conforme gerados
+            
+        Database:
+            - Lê context e response do raciocínio anterior
+            - Atualiza article.md após cada iteração
+            - Acumula conteúdo para contexto das próximas iterações
+        
+        Exemplos:
+            >>> gen = thinker.write_article(
+            ...     username='usuario1',
+            ...     log_dir='problema_1',
+            ...     iterations=5,
+            ...     n_tokens=65000
+            ... )
+            >>> for chunk in gen:
+            ...     print(chunk, end='', flush=True)
+        """
         def iterate():
-            prev_generated = " "
-            for i in range(iterations):                
-                prompt = article_prompt(iterations) if i == 0 else article_prompt_continue(i+1)
-                prev_generated += "\n\n" + prompt + "\n\n"
-                r = make_request_ollama_reasoning(api_key=self.api_key, model_name=self.model, prompt=prompt, context=prev_generated, n_tokens=n_tokens)
+            """
+            Função interna que itera para gerar artigo.
+            
+            Yields:
+                str: Chunks do artigo sendo gerado
                 
+            Lógica:
+            1. Acumula conteúdo anterior (prev_generated)
+            2. Para cada iteração até iterations:
+               - Seleciona prompt (inicial ou continuação)
+               - Faz requisição ao Ollama
+               - Stream chunks
+               - Acumula em prev_generated
+               - Atualiza article.md no DB
+            """
+            prev_generated = " "
+            
+            for i in range(iterations):
+                # Seleciona prompt apropriado para iteração
+                if i == 0:
+                    prompt = article_prompt(iterations)
+                else:
+                    prompt = article_prompt_continue(i+1, iterations)
+                
+                # Acumula prompt anterior para contexto
+                prev_generated += "\n\n" + prompt + "\n\n"
+                
+                # Faz requisição ao Ollama
+                r = make_request_ollama_reasoning(
+                    api_key=self.api_key, 
+                    model_name=self.model, 
+                    prompt=prompt, 
+                    context=prev_generated, 
+                    n_tokens=n_tokens
+                )
+                
+                # Stream dos chunks
                 for chunk in r:
                     if 'message' in chunk:
                         content = chunk['message'].get('content', '')
-                        # accumulate into context while streaming
+                        # Acumula em prev_generated
                         prev_generated += content
 
+                    # Yield para frontend em tempo real
                     yield content
 
+                # Atualiza article.md após cada iteração
                 upload_file(
                     user=User.objects(username=username).first(),
                     log_dir=log_dir,

@@ -3,10 +3,8 @@
 }
 
 .response-content, .article-content {
-    width: 50%;
     padding: 20px;
     box-sizing: border-box;
-    border-right: 1px solid #ccc;
     /* make these panels independently scrollable */
     height: var(--panel-height);
     overflow-y: auto;
@@ -14,25 +12,37 @@
 }
 
 .container {
-    max-width: 600px;
+    max-width: 1200px;
     margin: 0 auto;
-    /* inner content should flow normally; scrolling is handled by the panel */
     overflow: visible;
     overflow-anchor: none;
 }
 
-/* layout helper: place response and article side-by-side */
-leftside, rightside {
-    display: inline-block;
-    vertical-align: top;
+/* two-column layout */
+.two-column {
+    display: flex;
+    gap: 20px;
+    align-items: stretch;
+}
+
+.two-column > .response-content,
+.two-column > .article-content {
+    flex: 1 1 0;
+    min-width: 0; /* allow proper overflow handling */
+}
+
+.two-column > .response-content {
+    border-right: 1px solid #ccc;
 }
 
 @media (max-width: 900px) {
+    .two-column {
+        display: block;
+    }
     .response-content, .article-content {
         width: 100%;
         height: 60vh;
         border-right: none;
         border-bottom: 1px solid #ccc;
     }
-    leftside, rightside { display: block; }
 }
