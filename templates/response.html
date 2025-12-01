@@ -6,12 +6,12 @@
 {% block content %}
 <h3>Log and article creation</h3>
 <div class="two-column">
-    <div class="response-content markdown">
+    <div class="response-content markdown" id="responseContent">
         {% if response %}
                 {{read_markdown_to_html(response.file.read().decode("utf-8"))|safe}}
         {% endif %}
     </div>
-    <div class="article-content markdown">
+    <div class="article-content markdown" id="articleContent">
         {% if article %}
                 {{read_markdown_to_html(article.file.read().decode("utf-8"))|safe}}
         {% endif %}

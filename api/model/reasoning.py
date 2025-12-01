@@ -58,7 +58,7 @@ Retorna: string com o prompt formatado
 
 continue_prompt = lambda width: f"""
 Now, extensively create an mathematical approximation using this alternative,
-proposing {width} new ones from the result of the approach.
+AND PROPOSE {width} NEW ONES TO CONTINUE THE TASK.
 
 Remember: don't use any conjecture, only theorems, lemmas and other mathematical concepts well known.
 If any solution encountered, return SOLVED, else *only return PROGRESS*
@@ -79,23 +79,25 @@ Retorna: string com o prompt formatado
 
 
 article_prompt = lambda iterations: f"""
-Now, write a detailed article about the problem in the logs and the solution, using the following structure:
+Now, write a detailed article about the problem developed in this chain of thoughs
+Use the following structures
 
-1. Introduction: Briefly introduce the problem and its significance.
-2. Problem Statement: Clearly state the problem and any assumptions.
-3. Methodology: Describe the approach taken to solve the problem, including any algorithms or techniques used.
-4. Results: Present the findings, including any relevant data, graphs, or equations.
+1. Introduction: Briefly introduce the problem in the chain of thoughs and its significance.
+2. Problem Statement: Clearly state it and any assumptions.
+3. Methodology: Describe the approach taken to solve the problem in the chain of thoughs, including any algorithms, math theorems, or techniques used.
+4. Results: Present the findings, including any equation displayed on the logs.
 5. Conclusion: Summarize the findings and discuss any implications or future work.
 
 Render math in KATEX form.
 MAKE SURE TO WRITE WITHIN THE NUMBER OF ITERATIONS BELLOW
+AND DO NOT WRITE EVERYTHING AT ONCE!
 Iterations {iterations}
 
-RESERVE iterations 1 - {math.floor(iterations*0.2)}  for introduction (1.)
-RESERVE iterations {math.floor(iterations*0.2)} - {math.floor(iterations*0.4)} for problem statement (2.)
-RESERVE iterations {math.floor(iterations*0.4)} - {math.floor(iterations*0.6)} for methodology (3.)
-RESERVE iterations {math.floor(iterations*0.6)} - {math.floor(iterations*0.8)} for results (4.)
-RESERVE iterations {math.floor(iterations*0.8)} - {iterations} for conclusion (5.)
+If iteration between 1 - {math.floor(iterations*0.2)}, write or develop introduction (ONLY!!!) (1.)
+If iteration between {math.floor(iterations*0.2)} - {math.floor(iterations*0.4)}, write or develop the problem statement (ONLY!!!) (2.)
+If iteration between {math.floor(iterations*0.4)} - {math.floor(iterations*0.6)}, write or develop the methodology (ONLY!!!) (3.)
+If iteration between {math.floor(iterations*0.6)} - {math.floor(iterations*0.8)}, write or develop results (ONLY!!!) (4.)
+If iteration between {math.floor(iterations*0.8)} - {iterations}, write or develop conclusion (ONLY!!!) (5.)
 
 Current_iteration: 1
 """
@@ -116,16 +118,19 @@ Retorna: string com o prompt formatado
 
 
 article_prompt_continue = lambda iteration, iterations: f"""
-Continue writing the article, expanding on the Methodology and Results sections.
+Continue writing the article, expanding it.
 Make sure to include any additional insights or observations that may be relevant.
 Render math in KATEX form.
 
-RESERVE iterations 1 - {math.floor(iterations*0.2)}  for introduction (1.)
-RESERVE iterations {math.floor(iterations*0.2)} - {math.floor(iterations*0.4)} for problem statement (2.)
-RESERVE iterations {math.floor(iterations*0.4)} - {math.floor(iterations*0.6)} for methodology (3.)
-RESERVE iterations {math.floor(iterations*0.6)} - {math.floor(iterations*0.8)} for results (4.)
-RESERVE iterations {math.floor(iterations*0.8)} - {iterations} for conclusion (5.)
+If iteration between 1 - {math.floor(iterations*0.2)}, write or develop introduction (ONLY!!!) (1.)
+If iteration between {math.floor(iterations*0.2)} - {math.floor(iterations*0.4)}, write or develop the problem statement (ONLY!!!) (2.)
+If iteration between {math.floor(iterations*0.4)} - {math.floor(iterations*0.6)}, write or develop the methodology (ONLY!!!) (3.)
+If iteration between {math.floor(iterations*0.6)} - {math.floor(iterations*0.8)}, write or develop results (ONLY!!!) (4.)
+If iteration between {math.floor(iterations*0.8)} - {iterations}, write or develop conclusion (ONLY!!!) (5.)
 
+DO NOT USE GENERATED DATA, JUST WRITE AT AN ANALITICAL WAY
+ADD SUBSECTIONS AS NEEDED
+ALSO KEEP IN MIND TO NOT WRITE THIS PROMPT AND NOT REPEAT THE ANTERIOR SECTIONS!!
 Current_iteration: {iteration}
 
 """
@@ -196,7 +201,7 @@ class Reasoning:
         self.n_tokens_default = n_tokens_default
         self.api_key = api_key
 
-    def reasoning_step(self, username: str, log_dir: str, query: str, init: bool = False, prompt=None):
+    def reasoning_step(self, username: str, log_dir: str, query: str, prompt=None):
         """
         Executa um processo de raciocínio em profundidade sobre um problema.
         
@@ -291,19 +296,21 @@ class Reasoning:
                - Atualiza DB com novo context e response
             3. Retorna após max_depth iterações ou quando SOLVED
             """
+
             context = " "
             response = " "
             
             # Loop de raciocínio profundo
             for i in range(self.max_depth):
                 # Seleciona qual prompt usar
-                if init or i == 0:
+                if i == 0:
                     # Primeiro passo: gerar alternativas iniciais
                     current_prompt = generate_prompt(self.max_width, query)
                 else:
                     # Passos seguintes: continuar explorando
                     current_prompt = continue_prompt(self.max_width)
                 
+                print(current_prompt)
                 # Faz requisição ao Ollama
                 r = make_request_ollama_reasoning(
                     api_key=self.api_key, 
@@ -397,7 +404,9 @@ class Reasoning:
             >>> for chunk in gen:
             ...     print(chunk, end='', flush=True)
         """
-        def iterate():
+
+        usr = User.objects(username=username).first()
+        def iterate(usr=usr):
             """
             Função interna que itera para gerar artigo.
             
@@ -414,23 +423,25 @@ class Reasoning:
                - Atualiza article.md no DB
             """
             prev_generated = " "
-            
+            logs = " "
             for i in range(iterations):
                 # Seleciona prompt apropriado para iteração
                 if i == 0:
+                    logs = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=usr).first()
                     prompt = article_prompt(iterations)
                 else:
                     prompt = article_prompt_continue(i+1, iterations)
                 
                 # Acumula prompt anterior para contexto
                 prev_generated += "\n\n" + prompt + "\n\n"
+                gen = "\n\n"
                 
                 # Faz requisição ao Ollama
                 r = make_request_ollama_reasoning(
                     api_key=self.api_key, 
                     model_name=self.model, 
                     prompt=prompt, 
-                    context=prev_generated, 
+                    context=logs.file.read().decode('utf-8')+"\n\n"+prev_generated, 
                     n_tokens=n_tokens
                 )
                 
@@ -440,6 +451,7 @@ class Reasoning:
                         content = chunk['message'].get('content', '')
                         # Acumula em prev_generated
                         prev_generated += content
+                        gen += content
 
                     # Yield para frontend em tempo real
                     yield content
@@ -449,7 +461,7 @@ class Reasoning:
                     user=User.objects(username=username).first(),
                     log_dir=log_dir,
                     filename='article.md',
-                    raw_file=prev_generated.encode('utf-8')
+                    raw_file=gen.encode('utf-8')
                 )
 
         return iterate()

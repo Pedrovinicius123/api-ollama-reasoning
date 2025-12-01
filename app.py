@@ -17,6 +17,7 @@ Dependências principais:
 
 from flask import Flask, session, render_template, redirect, url_for, request, flash, send_file
 from turbo_flask import Turbo
+from flask_caching import Cache
 from thread_manager import ThreadManager
 from functools import wraps
 from datetime import timedelta
@@ -53,6 +54,11 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)
 
 # Inicializa o Turbo-Flask para atualizações em tempo real
 turbo = Turbo()
+cache = Cache(config = {
+    "DEBUG": True,          # some Flask specific configs
+    "CACHE_TYPE": "SimpleCache",  # Flask-Caching related configs
+    "CACHE_DEFAULT_TIMEOUT": 300
+})
 
 # ============================================================================
 # INICIALIZAÇÃO DAS EXTENSÕES
@@ -63,6 +69,9 @@ turbo.init_app(app)
 
 # Inicializa o MongoEngine para acesso ao banco de dados
 db.init_app(app)
+
+# Inicializa o cache
+cache.init_app(app)
 
 # Instancia o mecanismo de raciocínio com parâmetros padrão
 # max_width: número de alternativas a explorar em cada passo
@@ -194,8 +203,7 @@ def store_article(username: str, log_dir: str, model: str = None, iterations: st
                 article_content += chunk
                 # Atualiza a interface com o novo fragmento de conteúdo
                 turbo.push(turbo.update(render_template('_article_fragment.html', article=read_markdown_to_html(article_content)), 'articleContent'))
-
-
+        
 def store_response(query: str, username: str, log_dir: str, model: str = None, max_width: str = None, max_depth: str = None, n_tokens: str = None, api_key: str = None, prompt: str = None):
     """
     Processa uma pergunta através do sistema de raciocínio em profundidade e armazena a resposta.
@@ -265,7 +273,7 @@ def store_response(query: str, username: str, log_dir: str, model: str = None, m
 
     # Executa o raciocínio dentro de um contexto de aplicação Flask
     with app.app_context():
-        gen, response = thinker.reasoning_step(username=username, log_dir=log_dir, query=query or "", init=False, prompt=None if prompt == 'None' else prompt)
+        gen, response = thinker.reasoning_step(username=username, log_dir=log_dir, query=query or "", prompt=None if prompt == 'None' else prompt)
         for chunk in gen:
             # Para quando o problema é resolvido
             if chunk == "Solved the problem":
@@ -449,6 +457,7 @@ def register():
 # ROTAS DE VISUALIZAÇÃO DE LOGS
 # ============================================================================
 
+
 @app.route("/<username>")
 def view_logs_links(username: str):
     """
@@ -490,6 +499,7 @@ def view_logs_links(username: str):
 
 
 @app.route("/<username>/<log_dir>")
+@cache.cached(timeout=50)
 def view_logs(username: str, log_dir: str):
     """
     Exibe um log específico (run) completo de um usuário.
@@ -540,6 +550,7 @@ def view_logs(username: str, log_dir: str):
 
 @app.route("/<username>/<log_dir>/write_logs")
 @check_if_logged_in
+@cache.cached(timeout=50)
 def write(username: str, log_dir: str):
     """
     Inicia o processamento de raciocínio em profundidade para uma pergunta.
@@ -602,6 +613,7 @@ def write(username: str, log_dir: str):
 
 @app.route("/<username>/<log_dir>/write_article", methods=["GET", "POST"])
 @check_if_logged_in
+@cache.cached(timeout=50)
 def write_article(username: str, log_dir: str):
     """
     Inicia a geração de um artigo estruturado baseado no log de raciocínio.
