@@ -15,22 +15,18 @@ Dependências principais:
 - Markdown: Conversão de conteúdo para HTML
 """
 
-from flask import Flask, session, render_template, redirect, url_for, request, flash, send_file
+from flask import Flask, session, render_template, redirect, url_for, request, flash, copy_current_request_context
 from turbo_flask import Turbo
 from flask_caching import Cache
-from thread_manager import ThreadManager
 from functools import wraps
 from datetime import timedelta
-from api.model.reasoning import Reasoning
+import time # for debugging
 
 from forms.user import SubmitQueryForm, CreateArticle, LoginUser, CreateUser
 from forms.search import Search
-from markupsafe import Markup
-from markdown import markdown
-from database.db import db, upload_file, Upload, User
+from backend.database.db import db, upload_file, Upload, User
+from backend.ollama_thread_manager import read_markdown_to_html, ollama_queue
 from dotenv import load_dotenv
-import threading
-import re
 import os
 
 # Carrega as variáveis de ambiente do arquivo .env
@@ -73,45 +69,11 @@ db.init_app(app)
 # Inicializa o cache
 cache.init_app(app)
 
-# Instancia o mecanismo de raciocínio com parâmetros padrão
-# max_width: número de alternativas a explorar em cada passo
-# max_depth: profundidade máxima de raciocínio
-thinker = Reasoning('', max_width=5, max_depth=20)
-
 # Inicializa o ThreadManager que gerencia threads de processamento
-manager = ThreadManager()
-manager.start()
 
 # ============================================================================
 # FUNÇÕES UTILITÁRIAS
 # ============================================================================
-
-def read_markdown_to_html(content: str):
-    """
-    Converte conteúdo Markdown com LaTeX para HTML seguro.
-    
-    Esta função:
-    1. Substitui delimitadores LaTeX \\( e \\) por $ (modo inline)
-    2. Substitui delimitadores LaTeX \\[ e \\] por $$ (modo bloco)
-    3. Converte o Markdown resultante para HTML
-    4. Marca o resultado como seguro (Markup) para renderização no Jinja2
-    
-    Args:
-        content (str): Conteúdo em Markdown contendo possíveis expressões LaTeX
-        
-    Returns:
-        Markup: HTML seguro para renderização em templates Jinja2
-    """
-    # Substitui os delimitadores LaTeX pelos delimitadores markdown-katex
-    s = re.sub(r"\\\(|\\\)", "$", content)
-    s = re.sub(r"\\\[|\\\]", "$$", s)
-    
-    # Converte Markdown para HTML
-    html_code = markdown(s)
-    
-    # Retorna como Markup para que o Jinja2 não escape caracteres especiais
-    return Markup(html_code)
-
 
 def check_if_logged_in(f):
     """
@@ -138,152 +100,6 @@ def check_if_logged_in(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
-
-
-# ============================================================================
-# FUNÇÕES DE PROCESSAMENTO EM THREAD
-# ============================================================================
-
-def store_article(username: str, log_dir: str, model: str = None, iterations: str = "1", api_key: str = None, n_tokens: int = 65000):
-    """
-    Gera e armazena um artigo estruturado em uma thread separada.
-    
-    Esta função executa o gerador de artigos do Reasoning e atualiza a interface
-    do usuário em tempo real através do Turbo-Flask conforme o conteúdo é gerado.
-    
-    O artigo é estruturado com:
-    - Introdução (primeiras iterações)
-    - Declaração do Problema
-    - Metodologia
-    - Resultados
-    - Conclusão
-    
-    Args:
-        username (str): Nome do usuário proprietário do artigo
-        log_dir (str): Diretório de logs para armazenar o artigo
-        model (str, optional): Nome do modelo Ollama a usar. Defaults to None.
-        iterations (str, optional): Número de iterações para gerar o artigo. Defaults to "1".
-        api_key (str, optional): Chave de API para autenticação Ollama. Defaults to None.
-        n_tokens (int, optional): Número máximo de tokens a gerar. Defaults to 65000.
-        
-    Returns:
-        None: Atualiza o banco de dados e envia updates para o frontend via WebSocket
-        
-    Nota:
-        - Executa dentro de um contexto de aplicação Flask
-        - Usa Turbo para atualizar a interface em tempo real
-        - Armazena o resultado no banco MongoDB
-    """
-    iterations_int = 0
-    user = User.objects(username=username).first()
-    if user is None:
-        print("User not found, cannot store article.")
-        return
-
-    # Valida e converte o número de iterações
-    try:
-        iterations_int = int(iterations)
-    except Exception:
-        iterations_int = 1
-
-    # Configura os parâmetros do gerador de raciocínio
-    if api_key is not None:
-        thinker.api_key = api_key
-    if model:
-        thinker.model = model
-
-    article_content = ""
-    
-    # Executa o gerador dentro de um contexto de aplicação Flask
-    # (necessário para acesso ao banco de dados e sessões)
-    with app.app_context():
-        gen = thinker.write_article(username=username, log_dir=log_dir, iterations=iterations_int, n_tokens=n_tokens)
-        for chunk in gen:
-            if chunk:
-                article_content += chunk
-                # Atualiza a interface com o novo fragmento de conteúdo
-                turbo.push(turbo.update(render_template('_article_fragment.html', article=read_markdown_to_html(article_content)), 'articleContent'))
-        
-def store_response(query: str, username: str, log_dir: str, model: str = None, max_width: str = None, max_depth: str = None, n_tokens: str = None, api_key: str = None, prompt: str = None):
-    """
-    Processa uma pergunta através do sistema de raciocínio em profundidade e armazena a resposta.
-    
-    Esta função:
-    1. Valida e configura os parâmetros do sistema de raciocínio
-    2. Executa o raciocínio em profundidade com múltiplas alternativas
-    3. Atualiza a interface em tempo real através do Turbo-Flask
-    4. Armazena a resposta no banco de dados MongoDB
-    
-    Parâmetros do raciocínio:
-    - max_width: Número de alternativas a explorar em cada nível
-    - max_depth: Profundidade máxima de exploração
-    - n_tokens: Número máximo de tokens gerados
-    
-    Args:
-        query (str): Pergunta/problema a ser resolvido
-        username (str): Nome do usuário que submeteu a pergunta
-        log_dir (str): Diretório para armazenar logs do processamento
-        model (str, optional): Modelo Ollama a usar. Defaults to None.
-        max_width (str, optional): Número de alternativas por nível. Defaults to None.
-        max_depth (str, optional): Profundidade máxima de raciocínio. Defaults to None.
-        n_tokens (str, optional): Número máximo de tokens. Defaults to None.
-        api_key (str, optional): Chave de API Ollama. Defaults to None.
-        prompt (str, optional): Prompt customizado do sistema. Defaults to None.
-        
-    Returns:
-        None: Atualiza banco de dados e frontend em tempo real
-        
-    Nota:
-        - A função para quando recebe "Solved the problem" do modelo
-        - Mantém contexto de raciocínio anterior para continuidade
-    """
-    user = User.objects(username=username).first()
-    if user is None:
-        print("User not found, cannot store response.")
-        return
-
-    # Configura os parâmetros do sistema de raciocínio
-    if api_key is not None:
-        thinker.api_key = api_key
-    if model:
-        thinker.model = model
-    
-    # Tenta definir a largura máxima (número de alternativas)
-    try:
-        if max_width is not None:
-            thinker.max_width = int(max_width)
-    except Exception:
-        pass
-    
-    # Tenta definir a profundidade máxima
-    try:
-        if max_depth is not None:
-            thinker.max_depth = int(max_depth)
-    except Exception:
-        pass
-    
-    # Tenta definir o número máximo de tokens
-    try:
-        if n_tokens is not None:
-            thinker.n_tokens_default = int(n_tokens)
-    except Exception:
-        pass
-
-    response_content = ""
-
-    # Executa o raciocínio dentro de um contexto de aplicação Flask
-    with app.app_context():
-        gen, response = thinker.reasoning_step(username=username, log_dir=log_dir, query=query or "", prompt=None if prompt == 'None' else prompt)
-        for chunk in gen:
-            # Para quando o problema é resolvido
-            if chunk == "Solved the problem":
-                break
-            
-            if chunk:
-                response_content += chunk
-                # Atualiza a interface com novo conteúdo
-                turbo.push(turbo.update(render_template('_response_fragment.html', content=read_markdown_to_html(response_content)), 'responseContent'))
-
 
 # ============================================================================
 # ROTAS DA APLICAÇÃO - AUTENTICAÇÃO
@@ -315,21 +131,9 @@ def home():
 
     if form.validate_on_submit():
         query = form.query.data
-        objs = Upload.objects(creator=query)
-        files = set()
-        files_objs = []
-        for obj in objs:
-            filename = obj.filename.split("\\")
-            files_objs.append(filename[0])
-
-            if len(filename) == 1:
-                files.add(obj.creator.username+'/'+filename[0].split("/")[0])
-            else:
-                files.add(obj.creator.username+'/'+filename[0])
-
-        return redirect(url_for('view_logs_links', username=session.get('username')))
-    
-    return render_template('index.html', form=form)
+        return redirect(url_for('view_logs_links', username=query, log_dir=query))
+       
+    return render_template('index.html', form=form, Upload=Upload, users=User, current_user=session.get('username'))
 
 
 @app.route("/login", methods=['GET', 'POST'])
@@ -372,6 +176,7 @@ def login():
             flash("No users matching the description", 'error')
         else:
             usr = users.first()
+            print(usr.username)
             # Valida a senha contra o hash armazenado
             if usr.check_password(password):
                 flash('Sucessfully logged in')
@@ -437,7 +242,7 @@ def register():
             session['username'] = username
             
             # Cria novo usuário com ID sequencial
-            usr = User(id=User.objects.count()+1, username=username, email=email)
+            usr = User(username=username, email=email)
             
             # Gera hash bcrypt da senha
             usr.generate_password_hash(password)
@@ -458,8 +263,8 @@ def register():
 # ============================================================================
 
 
-@app.route("/<username>")
-def view_logs_links(username: str):
+@app.route("/search?<log_dir>")
+def view_logs_links(log_dir:str):
     """
     Lista todos os diretórios de logs (runs) para um usuário específico.
     
@@ -479,18 +284,16 @@ def view_logs_links(username: str):
         - query: Iterável de strings formatadas como 'username/log_dir'
         - read_markdown_to_html: Função para renderizar Markdown em templates
     """
-    user = User.objects(username=username).first()
-    
-    if user is None:
-        flash("User not found", 'error')
-        return redirect(url_for('home'))
 
     # Busca todos os uploads contendo 'response.md' do usuário
-    responses = Upload.objects(filename__contains="response.md", creator=user)
+    responses = Upload.objects(filename__contains=log_dir)
     
     # Extrai os diretórios de log formatados como 'username/log_dir'
-    log_dirs_responses = map(lambda x: user.username+'/'+x.filename.split("/")[0], responses)
-    
+    print([response for response in responses])
+    log_dirs_responses = list(map(lambda x: x.creator.username+'/'+x.filename.split("/")[0] if x.creator else x.creator, responses))
+    while None in log_dirs_responses:
+        log_dirs_responses.remove(None)
+
     if responses.first() is None:
         flash("No logs found for this user/log_dir", 'error')
         return redirect(url_for('home'))
@@ -499,7 +302,7 @@ def view_logs_links(username: str):
 
 
 @app.route("/<username>/<log_dir>")
-@cache.cached(timeout=50)
+@cache.cached(timeout=1000)
 def view_logs(username: str, log_dir: str):
     """
     Exibe um log específico (run) completo de um usuário.
@@ -550,7 +353,7 @@ def view_logs(username: str, log_dir: str):
 
 @app.route("/<username>/<log_dir>/write_logs")
 @check_if_logged_in
-@cache.cached(timeout=50)
+@cache.cached(timeout=1000)
 def write(username: str, log_dir: str):
     """
     Inicia o processamento de raciocínio em profundidade para uma pergunta.
@@ -590,30 +393,26 @@ def write(username: str, log_dir: str):
     # Verifica autorização: usuário só pode processar seus próprios logs
     if username != session.get("username"):
         return redirect(url_for("home"))
-    
-    # Extrai parâmetros da query string
-    query = request.args.get('query')
-    model = request.args.get('model')
-    max_width = request.args.get('max_width')
-    max_depth = request.args.get('max_depth')
-    n_tokens = request.args.get('n_tokens')
-    api_key = request.args.get('api_key')
-    prompt = request.args.get('prompt')
 
-    # Cria thread para executar store_response
-    t = threading.Thread(target=store_response, args=(query, username, log_dir, model, max_width, max_depth, n_tokens, api_key, prompt))
+    print(username)
+
+    params = {
+        "log_dir":log_dir,
+        "username": username,
+        "turbo":turbo,
+        **request.args
+    }
     
-    # Adiciona a thread ao ThreadManager de forma thread-safe
-    with manager.lock:
-        manager.threads.append(t)
+    _ , session_id = ollama_queue.submit_request_response(app, **params)
+    session[log_dir] = {"response":session_id}
 
     # Retorna página para receber atualizações em tempo real
-    return render_template('response.html', reponse=False, article=False, read_markdown_to_html=read_markdown_to_html)
+    return render_template('response.html', reponse=False, article=False, read_markdown_to_html=read_markdown_to_html, response_id=session_id)
 
 
 @app.route("/<username>/<log_dir>/write_article", methods=["GET", "POST"])
 @check_if_logged_in
-@cache.cached(timeout=50)
+@cache.cached(timeout=1000)
 def write_article(username: str, log_dir: str):
     """
     Inicia a geração de um artigo estruturado baseado no log de raciocínio.
@@ -647,29 +446,43 @@ def write_article(username: str, log_dir: str):
         - Atualizações via WebSocket Turbo-Flask
     """
     # Extrai parâmetros de configuração
-    model = request.args.get("model")
-    iterations = request.args.get('iterations')
-    api_key = request.args.get('api_key')
-    print("ITERATIONS", iterations)
 
-    # Cria thread para gerar artigo
-    t = threading.Thread(target=store_article, args=(username, log_dir, model, iterations, api_key))
+    params = {
+        "username":username,
+        "log_dir": log_dir,
+        "turbo": turbo,
+        **request.args
+
+    }
     
+    _, session_id = ollama_queue.submit_request_article(app, **params)
+    session[log_dir] = {"article": session_id}
+
     # Busca o response.md associado para contexto
-    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()
-    
-    # Adiciona thread ao gerenciador de forma thread-safe
-    with manager.lock:
-        manager.threads.append(t)
-    
-    print("queued thread", t)
-    
-    return render_template('response.html', response=response, article=False, read_markdown_to_html=read_markdown_to_html)
+    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()    
+    return render_template('response.html', response=response, article=False, read_markdown_to_html=read_markdown_to_html, response_id='', article_id=session_id)
 
 
 # ============================================================================
-# ROTAS DE SUBMISSÃO DE FORMULÁRIOS
+# ROTAS DE SUBMISSÃO DE FORMULÁRIOS E REMOÇÃO DE DADOS PELO USUÁRIO
 # ============================================================================
+
+@app.route("/<username>/<log_dir>/delete")
+@check_if_logged_in
+def delete(username:str, log_dir:str):
+    if session.get("username") != username:
+        flash("You cannot delete others logs", "error")
+        return redirect(url_for("home"))
+
+    usr = User.objects(username=username).first()
+    objs = Upload.objects(filename__contains=log_dir, creator=usr)
+    ollama_queue.cleanup_session(session.get(log_dir))
+    
+    for obj in objs:
+        obj.delete()
+
+    return redirect(url_for("home"))    
+
 
 @app.route("/submit_question", methods=["GET", "POST"])
 @check_if_logged_in
@@ -712,13 +525,19 @@ def submit_question():
         
         # Define diretório de log (padrão: 'default_log' se não fornecido)
         log_dir_value = form.log_dir.data or 'default_log'
-        
+        cits = [log.strip() for log in form.citations.data.split('#')]
+        while '' in cits:
+            cits.remove('')
+
+        print(cits)
+
         # Cria arquivo de contexto inicial
         upload_file(
             user=usr,
             log_dir=log_dir_value,
             filename='context.md',
             raw_file=f"Initial context: {form.context.data}".encode('utf-8'),
+            citations=cits,
             initial=True
         )
 
@@ -728,6 +547,7 @@ def submit_question():
             log_dir=log_dir_value,
             filename='response.md',
             raw_file=" ".encode('utf-8'),
+            citations=cits,
             initial=True
         )
 
@@ -737,6 +557,7 @@ def submit_question():
             log_dir=log_dir_value,
             filename='article.md',
             raw_file=" ".encode('utf-8'),
+            citations=cits,
             initial=True
         )
 
@@ -796,15 +617,13 @@ def submit_article():
         log_dir = form.log_dir.data
         iterations = form.n_iterations.data
         api_key = form.api_key.data
-        
-        # Usa modelo especificado ou padrão do sistema
-        model = form.model.data if form.model.data else thinker.model
 
         # Redireciona para iniciar geração do artigo
+        
         return redirect(url_for("write_article", 
             username=session.get("username"), 
             log_dir=log_dir, 
-            model=model, 
+            model = form.model.data,
             iterations=iterations, 
             api_key=api_key
         ))

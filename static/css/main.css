@@ -18,6 +18,11 @@ body {
 
 }
 
+.container .created-items .create .add{
+    width: 20px;
+
+}
+
 .flash{
     background-color: #fde68a;
     color: #92400e;

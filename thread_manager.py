@@ -100,16 +100,16 @@ class ThreadManager(threading.Thread):
             to_start = None
             
             # Acesso thread-safe à lista de threads
-            with self.lock:
-                for thread in self.threads:
-                    try:
-                        # Tenta iniciar a thread
-                        # RuntimeError é levantado se já foi iniciada
-                        thread.start()
-                    except RuntimeError:
-                        # Thread já foi iniciada anteriormente
-                        # Se completou, remove da fila
+            for thread in self.threads:
+                try:
+                    with self.lock:
+                       # Tenta iniciar a thread
+                       # RuntimeError é levantado se já foi iniciada
+                       thread.start()
+                except RuntimeError:
+                    # Thread já foi iniciada anteriormente
+                    # Se completou, remove da fila
+                    with self.lock:
                         if not thread.is_alive():
+                            thread.join()
                             self.threads.remove(thread)
-
-

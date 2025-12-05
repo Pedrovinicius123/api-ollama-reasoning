@@ -6,14 +6,18 @@
 {% block content %}
 <h3>Log and article creation</h3>
 <div class="two-column">
-    <div class="response-content markdown" id="responseContent">
+    <div class="response-content markdown" id="responseContent-{{response_id}}">
         {% if response %}
+            <div class="content-wraper">
                 {{read_markdown_to_html(response.file.read().decode("utf-8"))|safe}}
+            </div>
         {% endif %}
     </div>
-    <div class="article-content markdown" id="articleContent">
+    <div class="article-content markdown" id="articleContent-{{article_id}}">
         {% if article %}
+            <div class="content-wraper">
                 {{read_markdown_to_html(article.file.read().decode("utf-8"))|safe}}
+            </div>
         {% endif %}
     </div>
 </div>

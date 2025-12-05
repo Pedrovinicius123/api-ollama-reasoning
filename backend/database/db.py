@@ -20,7 +20,7 @@ Dependências:
 """
 
 from flask_mongoengine import MongoEngine
-from mongoengine import Document, FileField, StringField, IntField, ReferenceField, DoesNotExist
+from mongoengine import Document, FileField, StringField, IntField, ReferenceField, ListField, ObjectIdField
 from werkzeug.security import generate_password_hash, check_password_hash
 import os.path as path
 import time
@@ -79,7 +79,6 @@ class User(Document):
         - Sempre usar check_password() para validar
     """
     
-    id = IntField(primary_key=True)
     username = StringField(required=True, unique=True)
     email = StringField(required=True, unique=True)
     password_hash = StringField(required=True)
@@ -172,6 +171,7 @@ class Upload(Document):
         creator (ReferenceField): Referência ao User proprietário
         id (int): Identificador único (chave primária)
         depth (int): Profundidade de raciocínio (metadado, padrão: 0)
+        citations (list): Citações dos arquivos
         filename (str): Caminho do arquivo (ex: 'log_1/response.md')
         file (FileField): Conteúdo do arquivo em GridFS
     
@@ -185,6 +185,7 @@ class Upload(Document):
         - creator: Obrigatório (ReferenceField para User)
         - filename: Obrigatório
         - file: Obrigatório (FileField do GridFS)
+        - citations: Obrigatório (citações do documento)
     
     Exemplos:
         >>> # Criar novo upload
@@ -215,20 +216,22 @@ class Upload(Document):
     """
     
     creator = ReferenceField(User)
-    id = IntField(primary_key=True)
     depth = IntField(default=0)
     filename = StringField(required=True)
     file = FileField(required=True)
-    
+    citations = ListField()
+
     # Define a collection MongoDB explicitamente
     meta = {'collection': 'uploads'}
 
+    def register_refferences(self, *cits):
+        self.citations = list(cits)
 
 # ============================================================================
 # FUNÇÃO AUXILIAR: UPLOAD_FILE
 # ============================================================================
 
-def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool = False):
+def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool = False, citations:list =[]):
     """
     Gerencia upload/atualização de arquivos no banco de dados.
     
@@ -320,11 +323,12 @@ def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool
         print(f"File does not exist, creating new upload: {err}")
         
         # Cria novo documento Upload
-        new_upload_doc = Upload(id=Upload.objects.count()+1, creator=user)
+        new_upload_doc = Upload(creator=user)
         new_upload_doc.filename = full_path
         
         # Armazena arquivo via GridFS
         new_upload_doc.file.put(raw_file, content_type="text/markdown")
+        new_upload_doc.register_refferences(*citations) if citations else None
         new_upload_doc.save()
 
         return new_upload_doc
@@ -341,6 +345,7 @@ def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool
         
         # Replace: substitui conteúdo anterior + novo no GridFS
         existing.file.replace(content + raw_file, content_type="text/markdown")
+        existing.register_refferences(*citations)
         existing.save()
 
         return existing

@@ -10,7 +10,7 @@ Proteção:
 - CSRF: Token gerado automaticamente pelo Flask-WTF
 """
 
-from wtforms import StringField, SubmitField
+from wtforms import SearchField, SubmitField
 from flask_wtf import FlaskForm
 
 
@@ -40,7 +40,7 @@ class Search(FlaskForm):
     """
     
     # Campo de busca
-    query = StringField("Search here: ")
+    query = SearchField("Search here: ")
     
     # Botão de envio
     submit = SubmitField("Search ")

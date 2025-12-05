@@ -1,21 +1,27 @@
-:root{
-    --panel-height: 70vh;
-}
-
 .response-content, .article-content {
-    padding: 20px;
-    box-sizing: border-box;
-    /* make these panels independently scrollable */
-    height: var(--panel-height);
+    flex: 1;
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background: #f9f9f9;
+    /* Scroll automático com overscroll */
+    overflow-anchor: auto;
 }
 
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    overflow: visible;
-    overflow-anchor: none;
+/* Para scroll automático contínuo */
+.response-content, .article-content {
+    scroll-behavior: smooth;
+}
+
+/* Se quiser que o scroll fique sempre no final */
+.response-content, .article-content{
+    display: flex;
+    flex-direction: column;
+}
+
+.response-content .content-wrapper, .article-content .content-wrapper {
+    margin-top: auto;
 }
 
 /* two-column layout */
@@ -34,6 +40,8 @@
 .two-column > .response-content {
     border-right: 1px solid #ccc;
 }
+
+
 
 @media (max-width: 900px) {
     .two-column {

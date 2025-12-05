@@ -21,8 +21,8 @@ Dependências:
 - math: Cálculos de alocação de iterações
 """
 
-from api.model.api_main import make_request_ollama_reasoning
-from database.db import Upload, User, upload_file
+from backend.api.model.api_main import make_request_ollama_reasoning
+from backend.database.db import Upload, User, upload_file
 import os
 import math
 
@@ -201,7 +201,7 @@ class Reasoning:
         self.n_tokens_default = n_tokens_default
         self.api_key = api_key
 
-    def reasoning_step(self, username: str, log_dir: str, query: str, prompt=None):
+    def reasoning_step(self, username: str, log_dir_main:str, log_dirs: list, query: str, prompt=None):
         """
         Executa um processo de raciocínio em profundidade sobre um problema.
         
@@ -267,15 +267,16 @@ class Reasoning:
             >>> for chunk in gen:
             ...     print(chunk, end='', flush=True)
         """
-        print(os.path.join(log_dir, 'context.md'), username)
+        print(os.path.join(log_dir_main, 'context.md'), username)
         
         # Busca arquivo de contexto (histórico de raciocínio)
-        obj_file = Upload.objects(filename__contains=os.path.join(log_dir, 'context.md'), creator=User.objects(username=username).first()).first()
+        obj_file = Upload.objects(filename__contains=os.path.join(log_dir_main, 'context.md'), creator=User.objects(username=username).first()).first()
         if not obj_file:
             raise ValueError("No context file found for reasoning step.")
         
+
         # Busca arquivo de resposta (acumula resultado)
-        obj_response = Upload.objects(filename__contains=os.path.join(log_dir, 'response.md'), creator=User.objects(username=username).first()).first()
+        obj_response = Upload.objects(filename__contains=os.path.join(log_dir_main, 'response.md'), creator=User.objects(username=username).first()).first()
         if not obj_response:
             raise ValueError("No response file found for reasoning step.")
 
@@ -297,11 +298,16 @@ class Reasoning:
             3. Retorna após max_depth iterações ou quando SOLVED
             """
 
+            files = [Upload.objects(filename=log_dir).read().decode("utf-8") if Upload.objects(filename=log_dir) else "" for log_dir in log_dirs]
+            search_context=" "
+            for content in files:
+                search_context += content + "\n\n"
+                
             context = " "
             response = " "
             
             # Loop de raciocínio profundo
-            for i in range(self.max_depth):
+            for i in range(int(self.max_depth)):
                 # Seleciona qual prompt usar
                 if i == 0:
                     # Primeiro passo: gerar alternativas iniciais
@@ -316,7 +322,7 @@ class Reasoning:
                     api_key=self.api_key, 
                     model_name=self.model, 
                     prompt=current_prompt, 
-                    context=context, 
+                    context=search_context+context, 
                     n_tokens=self.n_tokens_default
                 )
                 
@@ -341,7 +347,7 @@ class Reasoning:
                 # Atualiza response.md no banco de dados
                 upload_file(
                     user=User.objects(username=username).first(),
-                    log_dir=log_dir,
+                    log_dir=log_dir_main,
                     filename='response.md',
                     raw_file=(response+"\n").encode('utf-8')
                 )
@@ -349,14 +355,14 @@ class Reasoning:
                 # Atualiza context.md no banco de dados (para continuidade)
                 upload_file(
                     user=User.objects(username=username).first(),
-                    log_dir=log_dir,
+                    log_dir=log_dir_main,
                     filename='context.md',
                     raw_file=(context+"\n").encode('utf-8')
                 )
 
         return iterate(), 200
 
-    def write_article(self, username: str, log_dir: str, iterations: int, n_tokens: int):
+    def write_article(self, username: str, log_dir: str, searched_in:list, iterations: int, n_tokens: int):
         """
         Gera um artigo estruturado baseado no raciocínio realizado.
         
@@ -424,7 +430,7 @@ class Reasoning:
             """
             prev_generated = " "
             logs = " "
-            for i in range(iterations):
+            for i in range(int(iterations)):
                 # Seleciona prompt apropriado para iteração
                 if i == 0:
                     logs = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=usr).first()
@@ -433,7 +439,6 @@ class Reasoning:
                     prompt = article_prompt_continue(i+1, iterations)
                 
                 # Acumula prompt anterior para contexto
-                prev_generated += "\n\n" + prompt + "\n\n"
                 gen = "\n\n"
                 
                 # Faz requisição ao Ollama
@@ -461,7 +466,9 @@ class Reasoning:
                     user=User.objects(username=username).first(),
                     log_dir=log_dir,
                     filename='article.md',
-                    raw_file=gen.encode('utf-8')
+                    raw_file=prev_generated.encode('utf-8')
                 )
+
+            yield [f'[{s}](s)' for s in searched_in].join('\n')
 
         return iterate()

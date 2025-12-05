@@ -23,7 +23,7 @@ Proteção:
 from wtforms import StringField, SubmitField, IntegerField, PasswordField
 from wtforms.validators import DataRequired, Optional, NumberRange, Email, EqualTo
 from flask_wtf import FlaskForm
-from database.db import User
+from backend.database.db import User
 
 
 # ============================================================================
@@ -83,6 +83,9 @@ class SubmitQueryForm(FlaskForm):
     
     # Largura máxima (alternativas por nível): 2 a 10
     max_width = IntegerField("Max Width", validators=[DataRequired(), NumberRange(2, 10)])
+
+    # Rerências
+    citations = StringField('Citations (State profiles with #)', validators=[Optional()])
     
     # Nome do modelo Ollama (opcional)
     model_name = StringField("Model name", validators=[Optional()])

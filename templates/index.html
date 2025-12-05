@@ -11,10 +11,28 @@
     <ul>
         <li><a href="/login">Login</a></li>
         <li><a href="/register">Register</a></li>
-        <li><a href="/submit_question">Make a Revolution</a></li>       
+        <li><a href="/submit_article">Create Article</a>
     </ul>
-</div>
-{% for message in get_flashed_messages()%}
+    {% for message in get_flashed_messages()%}
     <div class="flash">{{ message }}</div>
-{% endfor %}
+    {% endfor %}
+</div>
+<div class="container">
+    <div class="created-items">
+        {% for created in Upload.objects(creator=users.objects(username=current_user).first(), filename__contains='response.md') %}
+        <div class="item">
+            <a href="{{current_user+'/'+created.filename.split('/')[0]}}">
+                <h3>{{created.filename.split('/')[0]}}</h3>
+                <h4>Lorem ipsum dolor sit amet consectetur adipisicing elit. Dignissimos, laborum doloremque animi sunt quisquam a fuga sit quis itaque earum ab molestiae maiores explicabo eligendi labore obcaecati tenetur ut eos.</h4>
+            </a>
+            <a href="{{current_user+'/'+created.filename.split('/')[0]+'/delete'}}">Delete</a>
+        </div>
+        {% endfor %}
+        <a href="/submit_question" class="create">
+            <img class="add" src="{{url_for('static', filename='img/add.svg')}}" alt="">
+            Make another Revolution
+        </a>
+    </div>
+</div>
+
 {% endblock %}
