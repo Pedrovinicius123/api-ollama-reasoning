@@ -461,7 +461,6 @@ def write_article(username: str, log_dir: str):
 
     # Busca o response.md associado para contexto
     response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()
-    article = Upload.objects(filename__contains=os.path.join(log_dir, "article.md"), creator=User.objects(username=username).first()).first()    
     return render_template('response.html', response=response, article=False, read_markdown_to_html=read_markdown_to_html, response_id='', article_id=session_id)
 
 
