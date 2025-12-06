@@ -193,7 +193,6 @@ class OllamaRequestQueue:
         logging.info(f"Key: {key}")
         if key not in self.thread_local.reasoning_instance:
             logging.info("Key not found, add new one.")
-            assert "max_depth" in kwargs, "There was not max_depth or max_width configurations provided when creating instance"
             self.thread_local.reasoning_instance[key] = Reasoning(
                 api_key=kwargs.get("api_key"),
                 max_depth=kwargs.get("max_depth"),
@@ -215,6 +214,7 @@ class OllamaRequestQueue:
             username=kwargs.get("username"),
             n_tokens=kwargs.get("n_tokens"),
             iterations=kwargs.get("iterations"),
+            log_dir=kwargs.get("log_dir"),
             session_id=kwargs.get('session_id')
         
         )
