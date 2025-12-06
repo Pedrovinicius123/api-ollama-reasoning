@@ -20,7 +20,7 @@ Proteção:
 - CSRF: Tokens gerados automaticamente pelo Flask-WTF
 """
 
-from wtforms import StringField, SubmitField, IntegerField, PasswordField
+from wtforms import StringField, SubmitField, IntegerField, PasswordField, SelectField
 from wtforms.validators import DataRequired, Optional, NumberRange, Email, EqualTo
 from flask_wtf import FlaskForm
 from backend.database.db import User
@@ -88,7 +88,13 @@ class SubmitQueryForm(FlaskForm):
     citations = StringField('Citations (State profiles with #)', validators=[Optional()])
     
     # Nome do modelo Ollama (opcional)
-    model_name = StringField("Model name", validators=[Optional()])
+    model_name = SelectField('Model', choices=[
+        ("gpt-oss:120b-cloud", 'gpt-oss'), 
+        ("deepseek-v3.1:671b-cloud", "deepseek"),
+        ("minimax-m2:cloud", "minimax"),
+        ("gemini-3-pro-preview:latest", "google-gemini")
+
+    ], default="deepseek-v3.1:671b-cloud")
     
     # Botão de envio
     submit = SubmitField('submit')
@@ -144,7 +150,13 @@ class CreateArticle(FlaskForm):
     api_key = StringField("Ollama API key", validators=[DataRequired()])
     
     # Modelo Ollama (opcional)
-    model = StringField("Model", validators=[Optional()])
+    model = SelectField('Model', choices=[
+        ("gpt-oss:120b-cloud", 'gpt-oss'),
+        ("deepseek-v3.1:671b-cloud", 'deepseek'),
+        ("minimax-m2:cloud", 'minimax'),
+        ("gemini-3-pro-preview:latest", 'google-gemini')
+
+    ], default="deepseek-v3.1:671b-cloud")
     
     # Botão de envio
     submit = SubmitField("Create Article")

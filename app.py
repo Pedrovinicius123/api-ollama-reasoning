@@ -457,9 +457,11 @@ def write_article(username: str, log_dir: str):
     
     _, session_id = ollama_queue.submit_request_article(app, **params)
     session[log_dir] = {"article": session_id}
+    print(session_id)
 
     # Busca o response.md associado para contexto
-    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()    
+    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()
+    article = Upload.objects(filename__contains=os.path.join(log_dir, "article.md"), creator=User.objects(username=username).first()).first()    
     return render_template('response.html', response=response, article=False, read_markdown_to_html=read_markdown_to_html, response_id='', article_id=session_id)
 
 
@@ -567,7 +569,7 @@ def submit_question():
             prompt=None, 
             username=session.get('username'), 
             log_dir=log_dir_value, 
-            model=form.model_name.data or "deepseek-v3.1:671b-cloud", 
+            model=form.model_name.data, 
             max_width=form.max_width.data, 
             max_depth=form.max_depth.data, 
             n_tokens=form.n_tokens.data if form.n_tokens.data is not None else 100000, 

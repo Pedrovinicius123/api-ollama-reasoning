@@ -84,16 +84,19 @@ def store_article(thinker, app, turbo, username: str, log_dir: str, iterations:i
     usr = User.objects(username=username).first()
     article_obj = Upload.objects(filename__contains=log_dir, creator=usr).first()
     
+    print(article_obj)
     # Executa o gerador dentro de um contexto de aplicação Flask
     # (necessário para acesso ao banco de dados e sessões)
     with app.app_context():
         gen = thinker.write_article(username=username, log_dir=log_dir, iterations=iterations_int, n_tokens=n_tokens, searched_in=article_obj.citations)
+        logging.info(f'gen {gen}')
         for chunk in gen:
             if chunk:
                 article_content += chunk
+                logging.info(chunk)
+                logging.info(f'articleContent-{session_id}')
                 # Atualiza a interface com o novo fragmento de conteúdo
                 turbo.push(turbo.update(render_template('_article_fragment.html', article=read_markdown_to_html(article_content)), f'articleContent-{session_id}'))
-
 
 def store_response(thinker, app, turbo, query: str, username: str, log_dir: str, session_id:str=''):
     """
@@ -187,7 +190,9 @@ class OllamaRequestQueue:
             self.thread_local.reasoning_instance = {}
         
         key = f"{model}-{kwargs.get("username")}/{kwargs.get("request_prompt")}-{kwargs.get("api_key")}"
+        logging.info(f"Key: {key}")
         if key not in self.thread_local.reasoning_instance:
+            logging.info("Key not found, add new one.")
             assert "max_depth" in kwargs, "There was not max_depth or max_width configurations provided when creating instance"
             self.thread_local.reasoning_instance[key] = Reasoning(
                 api_key=kwargs.get("api_key"),
@@ -201,6 +206,7 @@ class OllamaRequestQueue:
 
         
     def _process_request_article(self, app, **kwargs):
+        logging.info(f"Session key: {kwargs.get("session_id")}")
         thinker = self._get_reasoning_instance(**kwargs)
         result = store_article(
             thinker,
@@ -212,8 +218,6 @@ class OllamaRequestQueue:
             session_id=kwargs.get('session_id')
         
         )
-
-        return Response(stream_with_context(result), 200)
 
     def _process_request_response(self, app, **kwargs):
         thinker = self._get_reasoning_instance(**kwargs)
@@ -227,8 +231,6 @@ class OllamaRequestQueue:
             session_id=kwargs.get('session_id')
 
         )
-
-        return Response(stream_with_context(result), 200)
 
     def join_session(self, session_id):
         with self.request_lock:
@@ -244,4 +246,4 @@ class OllamaRequestQueue:
                 del self.active_requests[session_id]
 
 # Singleton global
-ollama_queue = OllamaRequestQueue(max_workers=1)
+ollama_queue = OllamaRequestQueue()
