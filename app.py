@@ -407,7 +407,7 @@ def write(username: str, log_dir: str):
     session[log_dir] = {"response":session_id}
 
     # Retorna página para receber atualizações em tempo real
-    return render_template('response.html', reponse=False, article=False, read_markdown_to_html=read_markdown_to_html, response_id=session_id)
+    return render_template('response.html', reponse=False, article=False, read_markdown_to_html=read_markdown_to_html)
 
 
 @app.route("/<username>/<log_dir>/write_article", methods=["GET", "POST"])
@@ -461,7 +461,7 @@ def write_article(username: str, log_dir: str):
 
     # Busca o response.md associado para contexto
     response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()
-    return render_template('response.html', response=response, article=False, read_markdown_to_html=read_markdown_to_html, response_id='', article_id=session_id)
+    return render_template('response.html', response=response.file.read().decode("utf-8"), article=False, read_markdown_to_html=read_markdown_to_html)
 
 
 # ============================================================================
@@ -477,7 +477,7 @@ def delete(username:str, log_dir:str):
 
     usr = User.objects(username=username).first()
     objs = Upload.objects(filename__contains=log_dir, creator=usr)
-    ollama_queue.cleanup_session(session.get(log_dir))
+    ollama_queue.cleanup_session(session.get(log_dir).get("article"), session.get(log_dir).get("response"))
     
     for obj in objs:
         obj.delete()

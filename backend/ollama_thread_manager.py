@@ -144,7 +144,7 @@ def store_response(thinker, app, turbo, query: str, username: str, log_dir: str,
         gen, response = thinker.reasoning_step(username=username, log_dir_main=log_dir, log_dirs=resp_obj.citations, query=query or "")
         for chunk in gen:
             # Para quando o problema é resolvido
-            if chunk == "Solved the problem":
+            if "SOLVED" in chunk:
                 break
             
             if chunk:
@@ -232,18 +232,19 @@ class OllamaRequestQueue:
 
         )
 
-    def join_session(self, session_id):
+    def join_session(self, *session_ids):
         with self.request_lock:
-            if session_id in self.active_requests and self.active_requests[session_id].done():
-                del self.active_requests[session_id]
-                return True
+            for session_id in session_ids:
+                if session_id in self.active_requests and self.active_requests[session_id].done():
+                   del self.active_requests[session_id]
+                   return True
             return False
 
-    def cleanup_session(self, session_id):
+    def cleanup_session(self, *session_ids):
         with self.request_lock:
-            print(self.active_requests)
-            if not len(self.active_requests) == 0 and session_id in self.active_requests:
-                del self.active_requests[session_id]
+            for session_id in session_ids:
+                if not len(self.active_requests) == 0 and session_id in self.active_requests:
+                    del self.active_requests[session_id]
 
 # Singleton global
 ollama_queue = OllamaRequestQueue()
