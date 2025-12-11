@@ -267,7 +267,6 @@ class Reasoning:
             >>> for chunk in gen:
             ...     print(chunk, end='', flush=True)
         """
-        print(os.path.join(log_dir_main, 'context.md'), username)
         
         # Busca arquivo de contexto (histórico de raciocínio)
         obj_file = Upload.objects(filename__contains=os.path.join(log_dir_main, 'context.md'), creator=User.objects(username=username).first()).first()
@@ -316,8 +315,6 @@ class Reasoning:
                 else:
                     # Passos seguintes: continuar explorando
                     current_prompt = continue_prompt(self.max_width)
-                
-                print("current prompt", current_prompt)
                 # Faz requisição ao Ollama
                 r = make_request_ollama_reasoning(
                     api_key=self.api_key, 

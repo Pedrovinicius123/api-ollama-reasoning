@@ -310,11 +310,11 @@ def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool
     # Constrói caminho completo do arquivo
     full_path = path.join(log_dir, filename)
     
-    print(user, user.username, full_path)
+    
     
     try:
         # Tenta buscar arquivo existente
-        print([obj.filename for obj in Upload.objects(filename__contains=log_dir)])
+        
         existing = Upload.objects(filename=full_path, creator=user).first()
         if not existing:
             raise Exception("File does not exists")

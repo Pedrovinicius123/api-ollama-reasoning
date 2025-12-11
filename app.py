@@ -109,12 +109,12 @@ def check_if_logged_in(f):
 def before_first_request():
     executor = ThreadPoolExecutor()
     threading.Thread(target=update_load, args=(executor, )).start()
-    print("Thread started")
+    ("Thread started")
 
 def update_load(executor:ThreadPoolExecutor):
     def run_executor(task, data, key, is_article):
         running = True
-        print("NONE?", next(data))
+        ("NONE?", next(data))
         while running:
             try:
                 print(next(data))
@@ -212,7 +212,7 @@ def login():
             flash("No users matching the description", 'error')
         else:
             usr = users.first()
-            print("NONE?", usr.username)
+            
             # Valida a senha contra o hash armazenado
             if usr.check_password(password):
                 flash('Sucessfully logged in')
@@ -273,7 +273,7 @@ def register():
         if existing.first() is not None:
             flash("Username or email already registered", 'error')
         else:
-            print("username", username)
+            
             session['logged_in'] = True
             session['username'] = username
             
@@ -325,7 +325,6 @@ def view_logs_links(log_dir:str):
     responses = Upload.objects(filename__contains=log_dir)
     
     # Extrai os diretórios de log formatados como 'username/log_dir'
-    print([response for response in responses])
     log_dirs_responses = list(map(lambda x: x.creator.username+'/'+x.filename.split("/")[0] if x.creator else x.creator, responses))
     while None in log_dirs_responses:
         log_dirs_responses.remove(None)
@@ -430,7 +429,6 @@ def write(username: str, log_dir: str):
     if username != session.get("username"):
         return redirect(url_for("home"))
 
-    print("USERNAME", username)
     user = User.objects(username=username).first()
     params = {
         "log_dir":log_dir,
@@ -567,7 +565,6 @@ def submit_question():
         while '' in cits:
             cits.remove('')
 
-        print(cits)
         session_id = uuid.uuid4()
 
         # Cria arquivo de contexto inicial

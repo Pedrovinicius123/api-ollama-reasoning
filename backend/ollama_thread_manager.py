@@ -85,7 +85,7 @@ def store_article(thinker, app, username: str, log_dir: str, iterations:int = 1,
     usr = User.objects(username=username).first()
     article_obj = Upload.objects(filename__contains=log_dir, creator=usr).first()
     
-    print("ARTICLE OBJ", article_obj)
+    
     # Executa o gerador dentro de um contexto de aplicação Flask
     # (necessário para acesso ao banco de dados e sessões)
     with app.app_context():
@@ -131,10 +131,9 @@ def store_response(thinker, app, query: str, username: str, log_dir: str):
         - Mantém contexto de raciocínio anterior para continuidade
     """
 
-    print("USERNAME", username)
     response_content = ""
     usr = User.objects(username=username).first()
-    print(usr.username, log_dir)
+    
     resp_obj = Upload.objects(filename__contains=log_dir, creator=usr).first()
 
 
@@ -166,8 +165,6 @@ class OllamaRequestQueue:
         logger.info(f"OllamaService inicializado com {max_workers} workers")
         
     def submit_request_article(self, app, **kwargs):
-        print(os.path.join(kwargs.get("log_dir"), "article.md"), kwargs.get("user").username)
-        print([obj.filename for obj in  Upload.objects(creator=kwargs.get("user"))])
         sess_id = Upload.objects(filename__contains=os.path.join(kwargs.get("log_dir"), "article.md"), creator=kwargs.get("user")).first().session_id
         future = self.executor.submit(self._process_request_article, app, **kwargs, session_id=sess_id)
         with self.request_lock:
