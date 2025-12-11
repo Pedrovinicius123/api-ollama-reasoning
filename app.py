@@ -20,14 +20,17 @@ from turbo_flask import Turbo
 from flask_caching import Cache
 from functools import wraps
 from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor
+import concurrent
 import time # for debugging
+import threading
 
 from forms.user import SubmitQueryForm, CreateArticle, LoginUser, CreateUser
 from forms.search import Search
 from backend.database.db import db, upload_file, Upload, User
 from backend.ollama_thread_manager import read_markdown_to_html, ollama_queue
 from dotenv import load_dotenv
-import os
+import os, uuid
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -68,6 +71,7 @@ db.init_app(app)
 
 # Inicializa o cache
 cache.init_app(app)
+executor = None
 
 # Inicializa o ThreadManager que gerencia threads de processamento
 
@@ -100,6 +104,38 @@ def check_if_logged_in(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
+
+@app.before_first_request
+def before_first_request():
+    executor = ThreadPoolExecutor()
+    threading.Thread(target=update_load, args=(executor, )).start()
+    print("Thread started")
+
+def update_load(executor:ThreadPoolExecutor):
+    def run_executor(task, data, key, is_article):
+        running = True
+        print("NONE?", next(data))
+        while running:
+            try:
+                print(next(data))
+                task(next(data), key, is_article)
+            except StopIteration:
+                break
+
+    def task(data, key, is_article):
+        if not is_article:
+            turbo.push(turbo.update(render_template("_response_fragment.html", content=data), f"responseContent-{key}"))
+        else:
+            turbo.push(turbo.update(render_template("_article_fragment.html", article=data), f"articleContent-{key}"))
+
+    while True:              
+        for future in concurrent.futures.as_completed(ollama_queue.active_requests):
+            
+            #print(future.result())
+            gen, key, is_article = future.result()
+            executor.submit(run_executor, task, gen, key, is_article)
+            ollama_queue.active_requests.remove(future)
+            
 
 # ============================================================================
 # ROTAS DA APLICAÇÃO - AUTENTICAÇÃO
@@ -176,7 +212,7 @@ def login():
             flash("No users matching the description", 'error')
         else:
             usr = users.first()
-            print(usr.username)
+            print("NONE?", usr.username)
             # Valida a senha contra o hash armazenado
             if usr.check_password(password):
                 flash('Sucessfully logged in')
@@ -237,7 +273,7 @@ def register():
         if existing.first() is not None:
             flash("Username or email already registered", 'error')
         else:
-            print(username)
+            print("username", username)
             session['logged_in'] = True
             session['username'] = username
             
@@ -344,7 +380,7 @@ def view_logs(username: str, log_dir: str):
         flash("No logs found for this user/log_dir", 'error')
         return redirect(url_for('home'))
     
-    return render_template('response.html', response=response, article=article, read_markdown_to_html=read_markdown_to_html)
+    return render_template('response.html', response=response, article=article, response_id=response.session_id, article_id=article.session_id, read_markdown_to_html=read_markdown_to_html)
 
 
 # ============================================================================
@@ -394,20 +430,21 @@ def write(username: str, log_dir: str):
     if username != session.get("username"):
         return redirect(url_for("home"))
 
-    print(username)
-
+    print("USERNAME", username)
+    user = User.objects(username=username).first()
     params = {
         "log_dir":log_dir,
         "username": username,
-        "turbo":turbo,
+        "user": user,
+    
         **request.args
     }
     
-    _ , session_id = ollama_queue.submit_request_response(app, **params)
-    session[log_dir] = {"response":session_id}
-
+    ollama_queue.submit_request_response(app, **params)
+    response = Upload.objects(filename__contains=os.path.join(log_dir, 'response.md'), creator=user).first()
+    
     # Retorna página para receber atualizações em tempo real
-    return render_template('response.html', reponse=False, article=False, read_markdown_to_html=read_markdown_to_html)
+    return render_template('response.html', response=False, article=False, response_id=response.session_id, read_markdown_to_html=read_markdown_to_html)
 
 
 @app.route("/<username>/<log_dir>/write_article", methods=["GET", "POST"])
@@ -447,21 +484,20 @@ def write_article(username: str, log_dir: str):
     """
     # Extrai parâmetros de configuração
 
+    user = User.objects(username=username).first()
     params = {
-        "username":username,
+        "user":user,
         "log_dir": log_dir,
-        "turbo": turbo,
         **request.args
 
     }
     
-    _, session_id = ollama_queue.submit_request_article(app, **params)
-    session[log_dir] = {"article": session_id}
-    print(session_id)
-
+    ollama_queue.submit_request_article(app, **params)
+    
     # Busca o response.md associado para contexto
-    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=User.objects(username=username).first()).first()
-    return render_template('response.html', response=response.file.read().decode("utf-8"), article=False, read_markdown_to_html=read_markdown_to_html)
+    response = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"), creator=user).first()
+    article = Upload.objects(filename__contains=os.path.join(log_dir, "article.md"), creator=user).first()
+    return render_template('response.html', response=response.file.read().decode("utf-8"), article=False, article_id=article.session_id, read_markdown_to_html=read_markdown_to_html)
 
 
 # ============================================================================
@@ -477,7 +513,8 @@ def delete(username:str, log_dir:str):
 
     usr = User.objects(username=username).first()
     objs = Upload.objects(filename__contains=log_dir, creator=usr)
-    ollama_queue.cleanup_session(session.get(log_dir).get("article"), session.get(log_dir).get("response"))
+    if session.get(log_dir):
+       ollama_queue.cleanup_session(session.get(log_dir).get("article"), session.get(log_dir).get("response"))
     
     for obj in objs:
         obj.delete()
@@ -531,6 +568,7 @@ def submit_question():
             cits.remove('')
 
         print(cits)
+        session_id = uuid.uuid4()
 
         # Cria arquivo de contexto inicial
         upload_file(
@@ -538,6 +576,7 @@ def submit_question():
             log_dir=log_dir_value,
             filename='context.md',
             raw_file=f"Initial context: {form.context.data}".encode('utf-8'),
+            session_id=session_id,
             citations=cits,
             initial=True
         )
@@ -548,6 +587,7 @@ def submit_question():
             log_dir=log_dir_value,
             filename='response.md',
             raw_file=" ".encode('utf-8'),
+            session_id=session_id,
             citations=cits,
             initial=True
         )
@@ -558,6 +598,7 @@ def submit_question():
             log_dir=log_dir_value,
             filename='article.md',
             raw_file=" ".encode('utf-8'),
+            session_id=session_id,
             citations=cits,
             initial=True
         )

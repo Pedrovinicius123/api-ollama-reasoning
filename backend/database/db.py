@@ -219,6 +219,7 @@ class Upload(Document):
     depth = IntField(default=0)
     filename = StringField(required=True)
     file = FileField(required=True)
+    session_id = StringField(required=True)
     citations = ListField()
 
     # Define a collection MongoDB explicitamente
@@ -231,7 +232,7 @@ class Upload(Document):
 # FUNÇÃO AUXILIAR: UPLOAD_FILE
 # ============================================================================
 
-def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool = False, citations:list =[]):
+def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool = False, citations:list =[], session_id=""):
     """
     Gerencia upload/atualização de arquivos no banco de dados.
     
@@ -325,6 +326,7 @@ def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool
         # Cria novo documento Upload
         new_upload_doc = Upload(creator=user)
         new_upload_doc.filename = full_path
+        new_upload_doc.session_id = str(session_id)
         
         # Armazena arquivo via GridFS
         new_upload_doc.file.put(raw_file, content_type="text/markdown")
@@ -342,7 +344,8 @@ def upload_file(user: User, log_dir: str, filename: str, raw_file, initial: bool
             content = existing.file.read() if existing and existing.file.read() else b" "
             # Remove arquivo antigo do GridFS
             existing.file.delete()
-        
+
+                
         # Replace: substitui conteúdo anterior + novo no GridFS
         existing.file.replace(content + raw_file, content_type="text/markdown")
         existing.register_refferences(*citations)

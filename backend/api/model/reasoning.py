@@ -201,7 +201,7 @@ class Reasoning:
         self.n_tokens_default = n_tokens_default
         self.api_key = api_key
 
-    def reasoning_step(self, username: str, log_dir_main:str, log_dirs: list, query: str, prompt=None):
+    def reasoning_step(self, username: str, log_dir_main:str, log_dirs: list, query: str):
         """
         Executa um processo de raciocínio em profundidade sobre um problema.
         
@@ -305,6 +305,7 @@ class Reasoning:
                 
             context = " "
             response = " "
+            break_all = False
             
             # Loop de raciocínio profundo
             for i in range(int(self.max_depth)):
@@ -316,7 +317,7 @@ class Reasoning:
                     # Passos seguintes: continuar explorando
                     current_prompt = continue_prompt(self.max_width)
                 
-                print(current_prompt)
+                print("current prompt", current_prompt)
                 # Faz requisição ao Ollama
                 r = make_request_ollama_reasoning(
                     api_key=self.api_key, 
@@ -339,10 +340,15 @@ class Reasoning:
 
                         # Verifica se problema foi resolvido
                         if "SOLVED" in content:
-                            return "Solved the problem", 200
+                            yield "SOLVED"
+                            break_all=True
+                            break
 
                         # Yield para o frontend em tempo real
                         yield content
+
+                if break_all:
+                    break
 
                 # Atualiza response.md no banco de dados
                 upload_file(

@@ -7,6 +7,7 @@ from backend.api.model.reasoning import Reasoning
 from backend.database.db import User, Upload
 from flask import Response, stream_with_context, render_template
 import logging
+import os
 import time
 import uuid
 import re
@@ -40,7 +41,7 @@ def read_markdown_to_html(content: str):
 
 
 
-def store_article(thinker, app, turbo, username: str, log_dir: str, iterations:int = 1, n_tokens: int = 65000, session_id:str=''):
+def store_article(thinker, app, username: str, log_dir: str, iterations:int = 1, n_tokens: int = 65000):
     """
     Gera e armazena um artigo estruturado em uma thread separada.
     
@@ -84,7 +85,7 @@ def store_article(thinker, app, turbo, username: str, log_dir: str, iterations:i
     usr = User.objects(username=username).first()
     article_obj = Upload.objects(filename__contains=log_dir, creator=usr).first()
     
-    print(article_obj)
+    print("ARTICLE OBJ", article_obj)
     # Executa o gerador dentro de um contexto de aplicação Flask
     # (necessário para acesso ao banco de dados e sessões)
     with app.app_context():
@@ -93,12 +94,10 @@ def store_article(thinker, app, turbo, username: str, log_dir: str, iterations:i
         for chunk in gen:
             if chunk:
                 article_content += chunk
-                logging.info(chunk)
-                logging.info(f'articleContent-{session_id}')
                 # Atualiza a interface com o novo fragmento de conteúdo
-                turbo.push(turbo.update(render_template('_article_fragment.html', article=read_markdown_to_html(article_content)), f'articleContent-{session_id}'))
+                yield read_markdown_to_html(article_content)
 
-def store_response(thinker, app, turbo, query: str, username: str, log_dir: str, session_id:str=''):
+def store_response(thinker, app, query: str, username: str, log_dir: str):
     """
     Processa uma pergunta através do sistema de raciocínio em profundidade e armazena a resposta.
     
@@ -132,7 +131,7 @@ def store_response(thinker, app, turbo, query: str, username: str, log_dir: str,
         - Mantém contexto de raciocínio anterior para continuidade
     """
 
-    print(username)
+    print("USERNAME", username)
     response_content = ""
     usr = User.objects(username=username).first()
     print(usr.username, log_dir)
@@ -150,9 +149,7 @@ def store_response(thinker, app, turbo, query: str, username: str, log_dir: str,
             if chunk:
                 response_content += chunk
                 # Atualiza a interface com novo conteúdo
-                turbo.push(turbo.update(render_template('_response_fragment.html', content=read_markdown_to_html(response_content)), f'responseContent-{session_id}'))
-                
-
+                yield read_markdown_to_html(response_content)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -160,30 +157,33 @@ logger = logging.getLogger(__name__)
 
 class OllamaRequestQueue:
     def __init__(self, max_workers=3):
+        self.tasks = []
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.active_requests = {}
+        self.active_requests = []
         self.request_lock = threading.RLock()
         self.thread_local = threading.local()
 
         logger.info(f"OllamaService inicializado com {max_workers} workers")
         
     def submit_request_article(self, app, **kwargs):
-        session_id = uuid.uuid4()
-        future = self.executor.submit(self._process_request_article, app, **kwargs, session_id=session_id)
+        print(os.path.join(kwargs.get("log_dir"), "article.md"), kwargs.get("user").username)
+        print([obj.filename for obj in  Upload.objects(creator=kwargs.get("user"))])
+        sess_id = Upload.objects(filename__contains=os.path.join(kwargs.get("log_dir"), "article.md"), creator=kwargs.get("user")).first().session_id
+        future = self.executor.submit(self._process_request_article, app, **kwargs, session_id=sess_id)
         with self.request_lock:
-            self.active_requests[session_id] = future
+            self.active_requests.append(future)
 
         logger.info(f"Requisição de artigo submetida! modelo: {kwargs.get("model")}")
-        return future, session_id
+        return sess_id
 
     def submit_request_response(self, app, **kwargs):
-        session_id = uuid.uuid4()
-        future = self.executor.submit(self._process_request_response, app, **kwargs, session_id=session_id)
+        sess_id = Upload.objects(filename__contains=os.path.join(kwargs.get("log_dir"), "article.md"), creator=kwargs.get("user")).first().session_id
+        future = self.executor.submit(self._process_request_response, app, **kwargs, session_id=sess_id)
         with self.request_lock:
-            self.active_requests[session_id] = future
+            self.active_requests.append(future)
 
         logger.info(f"Requisição de Raciocínio realizada com sucesso! modelo: {kwargs.get("model")}")
-        return future, session_id
+        return sess_id
 
     def _get_reasoning_instance(self, model="deepseek-v3.1:671b-cloud", **kwargs):
         if not hasattr(self.thread_local, "reasoning_instance"):
@@ -210,27 +210,28 @@ class OllamaRequestQueue:
         result = store_article(
             thinker,
             app,
-            turbo=kwargs.get("turbo"),
             username=kwargs.get("username"),
             n_tokens=kwargs.get("n_tokens"),
             iterations=kwargs.get("iterations"),
             log_dir=kwargs.get("log_dir"),
-            session_id=kwargs.get('session_id')
         
         )
+
+        return result, Upload.objects(filename__contains=kwargs.get("log_dir"), creator=kwargs.get("user")).first().session_id, True
+
 
     def _process_request_response(self, app, **kwargs):
         thinker = self._get_reasoning_instance(**kwargs)
         result =  store_response(
             thinker,
             app,
-            turbo=kwargs.get("turbo"),
             query=kwargs.get("query"),
             username=kwargs.get("username"),
             log_dir=kwargs.get("log_dir"),
-            session_id=kwargs.get('session_id')
 
         )
+
+        return result, Upload.objects(filename__contains=kwargs.get("log_dir"), creator=kwargs.get("user")).first().session_id, False
 
     def join_session(self, *session_ids):
         with self.request_lock:
