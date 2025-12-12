@@ -21,9 +21,10 @@ Proteção:
 """
 
 from wtforms import StringField, SubmitField, IntegerField, PasswordField, SelectField
-from wtforms.validators import DataRequired, Optional, NumberRange, Email, EqualTo
+from wtforms.validators import DataRequired, Optional, NumberRange, Email, EqualTo, Length, Regexp, ValidationError
 from flask_wtf import FlaskForm
 from backend.database.db import User
+import phonenumbers
 
 
 # ============================================================================
@@ -67,25 +68,25 @@ class SubmitQueryForm(FlaskForm):
     query = StringField("Query ", validators=[DataRequired()])
     
     # Campo de contexto para orientar raciocínio
-    context = StringField("AI context ", validators=[DataRequired()])
+    context = StringField("Contexto da IA", validators=[DataRequired()])
     
     # Chave de autenticação Ollama
-    api_key = StringField("Your Ollama API key", validators=[DataRequired()])
+    api_key = StringField("Sua chave da API da Ollama", validators=[DataRequired()])
     
     # Diretório para logs (opcional - usa padrão se vazio)
-    log_dir = StringField("Logging Dir Temp", validators=[Optional()])
+    log_dir = StringField("Nome do projeto", validators=[Optional()])
     
     # Número máximo de tokens (opcional)
-    n_tokens = IntegerField("Number of tokens (max)", validators=[Optional()])
+    n_tokens = IntegerField("Número de tokens (max.)", validators=[Optional()])
     
     # Profundidade máxima: 2 a 20
-    max_depth = IntegerField("Max Depth", validators=[DataRequired(), NumberRange(2, 20)])
+    max_depth = IntegerField("Profundidade máxima", validators=[DataRequired(), NumberRange(2, 20)])
     
     # Largura máxima (alternativas por nível): 2 a 10
     max_width = IntegerField("Max Width", validators=[DataRequired(), NumberRange(2, 10)])
 
     # Rerências
-    citations = StringField('Citations (State profiles with #)', validators=[Optional()])
+    citations = StringField('Citações (Referencie perfis com #)', validators=[Optional()])
     
     # Nome do modelo Ollama (opcional)
     model_name = SelectField('Model', choices=[
@@ -97,7 +98,7 @@ class SubmitQueryForm(FlaskForm):
     ], default="deepseek-v3.1:671b-cloud")
     
     # Botão de envio
-    submit = SubmitField('submit')
+    submit = SubmitField('Criar Projeto')
 
 
 # ============================================================================
@@ -141,13 +142,13 @@ class CreateArticle(FlaskForm):
     """
     
     # Diretório do log a usar como base
-    log_dir = StringField("Directory to parse", validators=[DataRequired()])
+    log_dir = StringField("Projeto para analisar", validators=[DataRequired()])
     
     # Número de iterações (seções do artigo)
-    n_iterations = IntegerField("Number of pages", validators=[DataRequired()])
+    n_iterations = IntegerField("Número de paginas", validators=[DataRequired()])
     
     # Chave de autenticação Ollama
-    api_key = StringField("Ollama API key", validators=[DataRequired()])
+    api_key = StringField("Chave da API da Ollama", validators=[DataRequired()])
     
     # Modelo Ollama (opcional)
     model = SelectField('Model', choices=[
@@ -159,7 +160,7 @@ class CreateArticle(FlaskForm):
     ], default="deepseek-v3.1:671b-cloud")
     
     # Botão de envio
-    submit = SubmitField("Create Article")
+    submit = SubmitField("Criar Artigo")
 
 
 # ============================================================================
@@ -204,21 +205,38 @@ class CreateUser(FlaskForm):
     
     # Email (deve ser válido e único)
     email = StringField("Email", validators=[DataRequired(), Email()])
+    phone = StringField('Número de telefone', validators=[
+        DataRequired(),
+        Length(min=10, max=15), # Adjust min/max length as needed
+        Regexp(r'^[0-9]+$', message="Número de telefone precisa conter apenas dígitos")
+    ])
     
     # Senha (com validação de igualdade)
     password = PasswordField(
-        "Password", 
+        "Senha", 
         validators=[
             DataRequired(), 
-            EqualTo('confirm', message="Passwords must match")
+            EqualTo('confirm', message="Senhas precisam ser iguais")
         ]
     )
     
     # Confirmação de senha
-    confirm = PasswordField("Confirm Password", validators=[DataRequired()])
+    confirm = PasswordField("Confirmar senha", validators=[DataRequired()])
     
     # Botão de envio
-    submit = SubmitField("Register")
+    submit = SubmitField("Registrar")
+
+    def validate_phone(self, field):
+        try:
+            # Tenta analisar o número (pode ser necessário adicionar o código do país se for local)
+            p = phonenumbers.parse(field.data)
+            if not phonenumbers.is_valid_number(p):
+                raise ValueError()
+            # Opcional: Reformatar o dado para um padrão internacional (E.164) antes de salvar
+            field.data = phonenumbers.format_number(p, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+        except (phonenumbers.phonenumberutil.NumberParseException, ValueError):
+            raise ValidationError('Número de telefone inválido. Inclua o código do país, ex: +55...')
+
 
 
 # ============================================================================
@@ -259,10 +277,10 @@ class LoginUser(FlaskForm):
     """
     
     # Campo flexível: aceita username OU email
-    username_or_email = StringField("Username or email", validators=[DataRequired()])
+    username_or_email = StringField("Username ou email", validators=[DataRequired()])
     
     # Senha
-    password = PasswordField("Password", validators=[DataRequired()])
+    password = PasswordField("Senha", validators=[DataRequired()])
     
     # Botão de envio
     submit = SubmitField("Login")

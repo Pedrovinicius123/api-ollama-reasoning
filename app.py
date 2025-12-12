@@ -107,9 +107,10 @@ def check_if_logged_in(f):
 
 @app.before_first_request
 def before_first_request():
+    global active_threads
     executor = ThreadPoolExecutor()
     threading.Thread(target=update_load, args=(executor, )).start()
-    ("Thread started")
+    active_threads = []
 
 def update_load(executor:ThreadPoolExecutor):
     def run_executor(task, data, key, is_article):
@@ -322,7 +323,7 @@ def view_logs_links(log_dir:str):
     """
 
     # Busca todos os uploads contendo 'response.md' do usuário
-    responses = Upload.objects(filename__contains=log_dir)
+    responses = Upload.objects(filename__contains=os.path.join(log_dir, "response.md"))
     
     # Extrai os diretórios de log formatados como 'username/log_dir'
     log_dirs_responses = list(map(lambda x: x.creator.username+'/'+x.filename.split("/")[0] if x.creator else x.creator, responses))
